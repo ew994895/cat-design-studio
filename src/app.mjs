@@ -1,4 +1,5 @@
 import { ACTIONS, CatBrain } from "./brain.mjs";
+import { canTraverse, launchPoint, nextHopToward, reachablePlatforms } from "./navigation.mjs";
 import { advanceToy, bounceToy, createToy, isToyOnSurface, kickToy, TOY_RADIUS } from "./toy-physics.mjs";
 
 const habitat = document.querySelector("#habitat");
@@ -18,6 +19,7 @@ const toyButton = document.querySelector("#toy-button");
 const pauseButton = document.querySelector("#pause-button");
 
 const CAT_SIZE = 84;
+const CAT_FOOT_OFFSET = 3;
 const GRAVITY = 980;
 const idleFrames = Array.from({ length: 8 }, (_, index) =>
   `./assets/animations/idle-v1/frame-${String(index + 1).padStart(2, "0")}.png`
@@ -63,21 +65,27 @@ class CatWorld {
 
   get(id) { return this.platforms.find((platform) => platform.id === id); }
 
-  reachableFrom(platform, x) {
-    if (!platform) return [];
-    return this.platforms.filter((candidate) => {
-      if (candidate.id === platform.id) return false;
-      const vertical = platform.top - candidate.top;
-      const center = (candidate.left + candidate.right) / 2;
-      const horizontal = Math.abs(center - x);
-      return vertical > -70 && vertical < 260 && horizontal < 430;
-    });
+  canTraverse(from, to) {
+    return canTraverse(from, to);
   }
 
-  landingCandidate(previousBottom, nextBottom, left, right, tolerance = 30) {
+  reachableFrom(platform, x) {
+    return reachablePlatforms(this.platforms, platform, x);
+  }
+
+  nextHopToward(from, destination) {
+    return nextHopToward(this.platforms, from, destination);
+  }
+
+  launchPoint(from, to) {
+    return launchPoint(from, to);
+  }
+
+  landingCandidate(previousBottom, nextBottom, left, right, tolerance = 5, ignoredPlatformId = null) {
     if (nextBottom < previousBottom) return null;
     return this.platforms
       .filter((platform) =>
+        platform.id !== ignoredPlatformId &&
         previousBottom <= platform.top + tolerance &&
         nextBottom >= platform.top &&
         right > platform.left + 8 &&
@@ -92,7 +100,7 @@ class LivingCat {
     this.world = world;
     this.brain = new CatBrain();
     this.x = Math.max(60, window.innerWidth * 0.56);
-    this.y = window.innerHeight - 38 - CAT_SIZE;
+    this.y = window.innerHeight - 38 - CAT_SIZE + CAT_FOOT_OFFSET;
     this.vx = 0;
     this.vy = 0;
     this.facing = -1;
@@ -110,6 +118,7 @@ class LivingCat {
     this.nextJumpAt = 0;
     this.paused = false;
     this.drag = null;
+    this.departingPlatformId = null;
     this.ignoreCatClickUntil = 0;
   }
 
@@ -201,12 +210,25 @@ class LivingCat {
     if ((action === ACTIONS.PLAY || action === ACTIONS.INSPECT || action === ACTIONS.SEEK_AFFECTION) && this.grounded) {
       const target = action === ACTIONS.PLAY && this.toy ? this.toy : this.pointer;
       if (target) {
-        if (action === ACTIONS.PLAY && this.toy?.platformId && this.toy.platformId !== this.platformId && now >= this.nextJumpAt) {
+        if (action === ACTIONS.PLAY && this.toy?.platformId && this.toy.platformId !== this.platformId) {
           const targetPlatform = this.world.get(this.toy.platformId);
           const currentPlatform = this.world.get(this.platformId);
-          const reachable = this.world.reachableFrom(currentPlatform, this.x + CAT_SIZE / 2);
-          if (targetPlatform && reachable.some((platform) => platform.id === targetPlatform.id)) {
-            this.jumpToPlatform(targetPlatform, now);
+          const nextHop = this.world.nextHopToward(currentPlatform, targetPlatform);
+          if (nextHop && currentPlatform) {
+            const center = this.x + CAT_SIZE / 2;
+            const reachable = this.world.reachableFrom(currentPlatform, center);
+            if (now >= this.nextJumpAt && reachable.some((candidate) => candidate.id === nextHop.id)) {
+              this.jumpToPlatform(nextHop, now);
+              return;
+            }
+            const launchX = this.world.launchPoint(currentPlatform, nextHop);
+            const launchDelta = launchX - center;
+            if (Math.abs(launchDelta) > 18) {
+              this.facing = Math.sign(launchDelta) || this.facing;
+              this.vx = this.facing * 88;
+            } else {
+              this.vx *= 0.72;
+            }
             return;
           }
         }
@@ -216,7 +238,7 @@ class LivingCat {
           this.vx = this.facing * (action === ACTIONS.PLAY ? 92 : 46);
         } else {
           this.vx *= 0.78;
-          if (action === ACTIONS.PLAY && this.toy && now >= this.nextJumpAt && Math.abs(target.y - (this.y + CAT_SIZE)) > 42 && Math.random() < dt * 1.2) {
+          if (action === ACTIONS.PLAY && this.toy && now >= this.nextJumpAt && Math.abs(target.y - (this.y + CAT_SIZE - CAT_FOOT_OFFSET)) > 42 && Math.random() < dt * 1.2) {
             this.jumpForward(0.54, now);
           }
           if (action === ACTIONS.PLAY && this.toy && now - this.toy.spawnedAt > 900 && this.toy.platformId === this.platformId && Math.hypot(delta, target.y - this.y) < 88) {
@@ -244,15 +266,35 @@ class LivingCat {
   }
 
   jumpToPlatform(target, now = performance.now()) {
-    const targetX = Math.min(target.right - 38, Math.max(target.left + 38, (target.left + target.right) / 2));
+    const departureId = this.platformId;
     const center = this.x + CAT_SIZE / 2;
-    const seconds = 0.68;
+    const startY = this.y + CAT_SIZE - CAT_FOOT_OFFSET;
+    const endY = target.top;
+    const safeLeft = target.left + Math.min(42, target.width * 0.25);
+    const safeRight = target.right - Math.min(42, target.width * 0.25);
+    const dropping = endY > startY + 24;
+    let targetX = dropping
+      ? Math.min(safeRight, Math.max(safeLeft, center))
+      : Math.min(safeRight, Math.max(safeLeft, (target.left + target.right) / 2));
+    const currentPlatform = this.world.get(this.platformId);
+    if (dropping && currentPlatform) {
+      const exitCandidates = [currentPlatform.left - 120, currentPlatform.right + 120]
+        .filter((x) => x >= safeLeft && x <= safeRight)
+        .sort((a, b) => Math.abs(a - center) - Math.abs(b - center));
+      if (exitCandidates.length) targetX = exitCandidates[0];
+    }
+    const apexClearance = dropping ? 48 : 80;
+    const apexY = Math.min(startY, endY) - apexClearance;
+    this.vy = -Math.sqrt(Math.max(1, 2 * GRAVITY * (startY - apexY)));
+    this.vy = Math.max(-940, Math.min(-250, this.vy));
+    const verticalDelta = endY - startY;
+    const discriminant = Math.max(1, this.vy * this.vy + 2 * GRAVITY * verticalDelta);
+    const seconds = Math.max(0.5, (-this.vy + Math.sqrt(discriminant)) / GRAVITY);
     this.facing = Math.sign(targetX - center) || this.facing;
-    this.vx = (targetX - center) / seconds;
-    this.vy = (target.top - (this.y + CAT_SIZE) - 0.5 * GRAVITY * seconds * seconds) / seconds;
-    this.vy = Math.max(-780, Math.min(-290, this.vy));
+    this.vx = Math.max(-430, Math.min(430, (targetX - center) / seconds));
     this.grounded = false;
     this.platformId = null;
+    this.departingPlatformId = dropping ? departureId : null;
     this.target = { x: targetX, y: target.top, platformId: target.id, kind: "platform" };
     this.nextJumpAt = now + 1350;
   }
@@ -262,25 +304,37 @@ class LivingCat {
     this.vx = this.facing * (110 + power * 95);
     this.grounded = false;
     this.platformId = null;
+    this.departingPlatformId = null;
     this.nextJumpAt = now + 1200;
   }
 
   updatePhysics(dt, now) {
-    const previousBottom = this.y + CAT_SIZE;
+    const previousBottom = this.y + CAT_SIZE - CAT_FOOT_OFFSET;
     if (!this.grounded) this.vy += GRAVITY * dt;
     this.x += this.vx * dt;
     this.y += this.vy * dt;
-    if (this.grounded) this.vx *= Math.pow(0.93, dt * 60);
+    if (this.grounded) {
+      this.vx *= Math.pow(0.93, dt * 60);
+      const support = this.world.get(this.platformId);
+      const feetOverlap = support && this.x + CAT_SIZE - 14 > support.left && this.x + 14 < support.right;
+      if (!feetOverlap) {
+        this.grounded = false;
+        this.departingPlatformId = support?.id || null;
+        this.platformId = null;
+        this.vy = Math.max(24, this.vy);
+      }
+    }
 
-    const nextBottom = this.y + CAT_SIZE;
+    const nextBottom = this.y + CAT_SIZE - CAT_FOOT_OFFSET;
     if (!this.grounded && this.vy >= 0) {
-      const landing = this.world.landingCandidate(previousBottom, nextBottom, this.x + 12, this.x + CAT_SIZE - 12);
+      const landing = this.world.landingCandidate(previousBottom, nextBottom, this.x + 14, this.x + CAT_SIZE - 14, 5, this.departingPlatformId);
       if (landing) {
-        this.y = landing.top - CAT_SIZE;
+        this.y = landing.top - CAT_SIZE + CAT_FOOT_OFFSET;
         this.vy = 0;
         this.vx *= 0.62;
         this.grounded = true;
         this.platformId = landing.id;
+        this.departingPlatformId = null;
         this.brain.rememberLanding(landing.id);
         this.landingFlashUntil = now + 280;
         this.nextJumpAt = Math.max(this.nextJumpAt, now + 850);
@@ -293,10 +347,11 @@ class LivingCat {
     if (this.y > window.innerHeight + 40) {
       const floor = this.world.get("floor");
       this.x = Math.max(20, Math.min(window.innerWidth - CAT_SIZE - 20, this.x));
-      this.y = (floor?.top ?? window.innerHeight - 38) - CAT_SIZE;
+      this.y = (floor?.top ?? window.innerHeight - 38) - CAT_SIZE + CAT_FOOT_OFFSET;
       this.vx = this.vy = 0;
       this.grounded = true;
       this.platformId = "floor";
+      this.departingPlatformId = null;
     }
   }
 
@@ -359,6 +414,7 @@ class LivingCat {
     toyElement.style.setProperty("--toy-speed", String(Math.min(1, Math.abs(toy.vx) / 320)));
     toyElement.dataset.bounces = String(toy.bounceCount);
     toyElement.dataset.hits = String(toy.hitCount);
+    toyElement.dataset.platform = toy.platformId || "airborne";
   }
 
   setRenderState(action) {
@@ -396,6 +452,10 @@ class LivingCat {
   render() {
     catElement.style.transform = `translate3d(${this.x.toFixed(2)}px, ${this.y.toFixed(2)}px, 0)`;
     catElement.style.setProperty("--facing", this.facing);
+    catElement.dataset.platform = this.platformId || "airborne";
+    catElement.dataset.grounded = String(this.grounded);
+    catElement.dataset.x = this.x.toFixed(1);
+    catElement.dataset.y = this.y.toFixed(1);
     statusCopy.textContent = this.drag?.kind === "cat"
       ? "temporarily accepting relocation"
       : this.drag?.kind === "toy"
@@ -428,6 +488,7 @@ class LivingCat {
       this.vy = 0;
       this.grounded = false;
       this.platformId = null;
+      this.departingPlatformId = null;
       this.setRenderState(ACTIONS.INSPECT);
       this.updateSprite(now);
     } else {
@@ -456,7 +517,7 @@ class LivingCat {
 
     if (drag.kind === "cat") {
       this.x = Math.min(window.innerWidth - CAT_SIZE, Math.max(0, event.clientX - drag.offsetX));
-      this.y = Math.min(window.innerHeight - CAT_SIZE, Math.max(0, event.clientY - drag.offsetY));
+      this.y = Math.min(window.innerHeight - CAT_SIZE + CAT_FOOT_OFFSET, Math.max(0, event.clientY - drag.offsetY));
       this.render();
     } else if (this.toy) {
       this.toy.x = Math.min(window.innerWidth - this.toy.radius, Math.max(this.toy.radius, event.clientX - drag.offsetX));
@@ -480,7 +541,8 @@ class LivingCat {
       this.vy = Math.min(500, Math.max(-500, releaseVy));
       this.grounded = false;
       this.platformId = null;
-      const bottom = this.y + CAT_SIZE;
+      this.departingPlatformId = null;
+      const bottom = this.y + CAT_SIZE - CAT_FOOT_OFFSET;
       const landing = this.world.platforms
         .filter((platform) =>
           this.x + CAT_SIZE - 12 > platform.left &&
@@ -490,7 +552,7 @@ class LivingCat {
         )
         .sort((a, b) => a.top - b.top)[0];
       if (landing) {
-        this.y = landing.top - CAT_SIZE;
+        this.y = landing.top - CAT_SIZE + CAT_FOOT_OFFSET;
         this.vy = 0;
         this.vx *= 0.35;
         this.grounded = true;
@@ -673,7 +735,7 @@ window.addEventListener("resize", () => {
   world.scan();
   const platform = world.get(cat.platformId) || world.get("floor");
   cat.x = Math.min(window.innerWidth - CAT_SIZE, Math.max(0, cat.x));
-  if (cat.grounded && platform) cat.y = platform.top - CAT_SIZE;
+  if (cat.grounded && platform) cat.y = platform.top - CAT_SIZE + CAT_FOOT_OFFSET;
 });
 
 document.addEventListener("visibilitychange", () => {

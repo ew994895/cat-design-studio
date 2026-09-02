@@ -29,6 +29,7 @@ After changing `src/brain.mjs` or `src/app.mjs`, regenerate the double-clickable
 - Cursor-stroking detection around the cat's head, purring, and remembered pet count
 - Droppable physics toy with gravity, shelf and floor collisions, diminishing bounces, rolling friction, wall rebounds, and repeated paw strikes from the pursuing cat
 - Direct manipulation: pick up and relocate the cat, or drag and toss the ball with release velocity preserved
+- Surface navigation graph with edge-fall detection and calculated jump arcs for climbing through every habitat tier and returning safely to the floor
 - Optional live brain panel showing needs, chosen action, surface, pets, and landings
 - Pause/resume control
 
