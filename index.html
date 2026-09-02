@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0d10" />
+    <title>Cat Design Studio — Living Widget Prototype</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main id="habitat" class="habitat" aria-label="A digital habitat for the widget cat">
+      <div class="ambient ambient--one"></div>
+      <div class="ambient ambient--two"></div>
+
+      <section class="intro-panel" data-cat-platform="intro" aria-labelledby="title">
+        <span class="eyebrow">CAT DESIGN STUDIO / PROTOTYPE 0.1</span>
+        <h1 id="title">Your computer has a new resident.</h1>
+        <p>
+          It has needs, preferences, and a mind of its own. Stroke its head, pick it up, toss its toy,
+          or leave it alone and watch what it chooses.
+        </p>
+        <div class="status-line">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="status-copy" aria-live="polite">Waking up…</span>
+        </div>
+      </section>
+
+      <section class="code-window" data-cat-platform="editor" aria-label="Code editor platform">
+        <header class="window-bar">
+          <span class="traffic traffic--red"></span>
+          <span class="traffic traffic--amber"></span>
+          <span class="traffic traffic--green"></span>
+          <span class="window-title">cat-brain.mjs</span>
+        </header>
+        <pre><code><span class="code-muted">// instinct, not instruction</span>
+<span class="code-purple">const</span> nextMove = brain.<span class="code-blue">choose</span>({
+  curiosity: <span class="code-green">0.82</span>,
+  energy: <span class="code-green">0.61</span>,
+  humanNearby: <span class="code-amber">true</span>
+});</code></pre>
+      </section>
+
+      <section class="browser-window" data-cat-platform="browser" aria-label="Browser window platform">
+        <header class="browser-bar">
+          <span class="browser-controls">‹　›　↻</span>
+          <span class="address">local.cat / habitat</span>
+        </header>
+        <div class="browser-content">
+          <div class="mini-card"><span>ENERGY</span><strong>rest when tired</strong></div>
+          <div class="mini-card"><span>CURIOSITY</span><strong>explore the edges</strong></div>
+          <div class="mini-card"><span>AFFECTION</span><strong>remember gentle hands</strong></div>
+        </div>
+      </section>
+
+      <div class="floating-shelf" data-cat-platform="shelf" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+
+      <div class="tiny-window" data-cat-platform="tiny" aria-hidden="true">
+        <span class="tiny-prompt">&gt;_</span>
+      </div>
+
+      <div id="toy" class="toy" role="img" aria-label="A draggable bouncing toy ball" title="Drag to pick up and toss"><span></span></div>
+      <div id="particles" class="particles" aria-hidden="true"></div>
+
+      <div id="cat" class="cat cat--idle" role="img" aria-label="A small autonomous black widget cat" title="Drag to pick up and move">
+        <img id="cat-sprite" class="cat-sprite" src="./assets/animations/idle-v1/frame-01.png" alt="" draggable="false" />
+        <span class="sleep-mark sleep-mark--one">z</span>
+        <span class="sleep-mark sleep-mark--two">z</span>
+      </div>
+
+      <div class="floor" data-cat-platform="floor" aria-hidden="true">
+        <span class="floor-label">LOCAL DESKTOP</span>
+      </div>
+
+      <aside id="debug-panel" class="debug-panel" aria-label="Cat brain debug view" hidden>
+        <header>
+          <span>BRAIN / LIVE</span>
+          <strong id="debug-action">idle</strong>
+        </header>
+        <div id="drive-list" class="drive-list"></div>
+        <dl>
+          <div><dt>surface</dt><dd id="debug-platform">floor</dd></div>
+          <div><dt>pets</dt><dd id="debug-pets">0</dd></div>
+          <div><dt>landings</dt><dd id="debug-jumps">0</dd></div>
+        </dl>
+      </aside>
+
+      <nav class="controls" aria-label="Habitat controls">
+        <button id="toy-button" type="button"><span aria-hidden="true">●</span> Drop a toy</button>
+        <button id="debug-button" type="button" aria-pressed="false">Show brain</button>
+        <button id="pause-button" type="button" aria-pressed="false">Pause</button>
+      </nav>
+    </main>
+
+    <script src="./src/app.bundle.js?v=0.4"></script>
+  </body>
+</html>
