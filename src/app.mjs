@@ -21,10 +21,14 @@ const pauseButton = document.querySelector("#pause-button");
 const CAT_SIZE = 84;
 const CAT_FOOT_OFFSET = 3;
 const GRAVITY = 980;
-const idleFrames = Array.from({ length: 8 }, (_, index) =>
+const fileIdleFrames = Array.from({ length: 8 }, (_, index) =>
   `./assets/animations/idle-v1/frame-${String(index + 1).padStart(2, "0")}.png`
 );
+const idleFrames = typeof EMBEDDED_IDLE_FRAMES === "undefined"
+  ? fileIdleFrames
+  : EMBEDDED_IDLE_FRAMES;
 idleFrames.forEach((src) => { const image = new Image(); image.src = src; });
+catSprite.src = idleFrames[0];
 
 const actionCopy = {
   [ACTIONS.IDLE]: "listening to the room",
