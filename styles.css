@@ -268,43 +268,90 @@ h1 { margin: 0; max-width: 430px; font-size: clamp(30px, 3.2vw, 50px); line-heig
 
 .laser-toy,
 .box-toy,
-.feather-toy { position: absolute; z-index: 16; pointer-events: none; user-select: none; }
+.feather-toy { position: absolute; z-index: 16; user-select: none; }
 .laser-toy {
+  left: 0;
+  top: 0;
   width: 12px;
   height: 12px;
   border: 2px solid #ffbdc1;
   border-radius: 50%;
   background: #ff2635;
   box-shadow: 0 0 4px #fff, 0 0 14px #ff2635, 0 0 30px rgba(255,38,53,.7);
-  transform: translate(-50%, -50%);
+  pointer-events: none;
+  will-change: transform;
 }
 .box-toy {
-  width: 88px;
-  height: 54px;
+  left: 0;
+  top: 0;
+  width: 92px;
+  height: 56px;
   border: 3px solid #6f4728;
   border-radius: 3px 3px 8px 8px;
   background: #b77a45;
   box-shadow: inset 0 0 0 2px rgba(255,211,148,.18), 0 10px 18px rgba(0,0,0,.35);
+  cursor: grab;
+  touch-action: none;
+  will-change: transform;
 }
+.box-toy.box-toy--held { z-index: 55; cursor: grabbing; filter: brightness(1.08); box-shadow: inset 0 0 0 2px rgba(255,211,148,.24), 0 18px 24px rgba(0,0,0,.48); }
 .box-toy::before,
 .box-toy::after { content: ""; position: absolute; top: -17px; width: 47px; height: 18px; border: 3px solid #6f4728; background: #ca8b50; }
 .box-toy::before { left: -3px; transform: skewX(-20deg); transform-origin: 100% 100%; }
 .box-toy::after { right: -3px; transform: skewX(20deg); transform-origin: 0 100%; }
 .box-toy span { position: absolute; left: 12px; bottom: 11px; color: rgba(73,42,21,.72); font: 800 8px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
 .cat--in-box { z-index: 15; }
-.cat--in-box .cat-art { opacity: .72; transform: translateY(28px) scaleX(calc(var(--facing) * .92)) scaleY(.76); }
-.feather-toy { width: 74px; height: 74px; transform: translate(-8px, -8px); }
-.feather-string { position: absolute; left: 4px; top: 0; width: 2px; height: 54px; background: #c9c4b3; transform: rotate(-32deg); transform-origin: 50% 0; }
-.feather {
-  position: absolute;
-  left: 23px;
-  top: 39px;
-  color: #75c7ff;
-  font-size: 25px;
-  text-shadow: -7px 5px #c993ff, 0 0 10px rgba(117,199,255,.5);
-  transform: rotate(28deg);
-  animation: feather-sway 620ms ease-in-out infinite alternate;
+.cat--in-box .cat-art { opacity: 1; transform: translateY(-9px) scaleX(calc(var(--facing) * .9)) scaleY(.92); }
+.feather-toy {
+  inset: 0;
+  pointer-events: none;
+  contain: strict;
 }
+.fishing-handle,
+.fishing-rod,
+.fishing-line,
+.feather-lure { position: absolute; left: 0; top: 0; will-change: transform; }
+.fishing-handle {
+  z-index: 3;
+  width: 17px;
+  height: 17px;
+  border: 2px solid #50351f;
+  border-radius: 50%;
+  background: #bd7440;
+  box-shadow: inset 0 0 0 3px #754625, 0 3px 8px rgba(0,0,0,.4);
+}
+.fishing-rod {
+  z-index: 2;
+  width: 1px;
+  height: 5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #a86836 0 28%, #cf9861 28% 83%, #dce4e6 83%);
+  box-shadow: 0 2px 4px rgba(0,0,0,.35);
+  transform-origin: 0 50%;
+}
+.fishing-line {
+  z-index: 1;
+  width: 1px;
+  height: 1px;
+  background: rgba(226,232,230,.76);
+  box-shadow: 0 0 3px rgba(255,255,255,.35);
+  transform-origin: 0 50%;
+}
+.feather-lure {
+  z-index: 2;
+  width: 34px;
+  height: 28px;
+  filter: drop-shadow(0 3px 5px rgba(0,0,0,.42));
+}
+.feather-plume {
+  position: absolute;
+  left: 2px;
+  top: 0;
+  color: #75c7ff;
+  font: 900 26px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-shadow: -7px 5px #c993ff, 0 0 10px rgba(117,199,255,.5);
+}
+.feather-tail { position: absolute; left: -12px; top: 10px; color: #ffd25e; font: 900 15px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 .particles { position: absolute; inset: 0; z-index: 24; pointer-events: none; }
 .heart { position: absolute; color: #f0b4aa; font-size: 13px; animation: heart-up 1.15s ease-out forwards; }

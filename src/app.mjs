@@ -2,6 +2,16 @@ import { ACTIONS, CatBrain } from "./brain.mjs";
 import { CAT_PROFILES, DEFAULT_CAT_ID, getCatProfile } from "./cats.mjs";
 import { canTraverse, launchPoint, nextHopToward, reachablePlatforms } from "./navigation.mjs";
 import { advanceToy, bounceToy, createToy, isToyOnSurface, kickToy, TOY_RADIUS } from "./toy-physics.mjs";
+import {
+  advanceBox,
+  advanceFishingRig,
+  createBox,
+  createFishingRig,
+  isBoxOnSurface,
+  segmentGeometry,
+  setFishingHandle,
+  settleBox
+} from "./toy-interactions.mjs";
 
 const habitat = document.querySelector("#habitat");
 const catElement = document.querySelector("#cat");
@@ -12,6 +22,10 @@ const toyElement = document.querySelector("#toy");
 const laserToyElement = document.querySelector("#laser-toy");
 const boxToyElement = document.querySelector("#box-toy");
 const featherToyElement = document.querySelector("#feather-toy");
+const fishingHandleElement = featherToyElement.querySelector(".fishing-handle");
+const fishingRodElement = featherToyElement.querySelector(".fishing-rod");
+const fishingLineElement = featherToyElement.querySelector(".fishing-line");
+const featherLureElement = featherToyElement.querySelector(".feather-lure");
 const particleLayer = document.querySelector("#particles");
 const statusCopy = document.querySelector("#status-copy");
 const debugPanel = document.querySelector("#debug-panel");
@@ -148,6 +162,8 @@ class LivingCat {
     this.toy = null;
     this.toyType = null;
     this.toyTarget = null;
+    this.box = null;
+    this.fishingRig = null;
     this.inBox = false;
     this.specialCooldownUntil = 0;
     this.lastPetAt = 0;
@@ -160,6 +176,13 @@ class LivingCat {
     this.drag = null;
     this.departingPlatformId = null;
     this.ignoreCatClickUntil = 0;
+    this.lastPointerReactionCheck = 0;
+    this.lastStatusCopy = "";
+    this.lastCatTransform = "";
+    this.lastCatClassName = "";
+    this.lastBoxTransform = "";
+    this.nextDebugUpdateAt = 0;
+    this.nextToyDatasetAt = 0;
     this.selectProfile(this.profile.id, false);
   }
 
@@ -220,10 +243,10 @@ class LivingCat {
   update(dt, now) {
     if (this.paused) return;
     if (this.drag?.kind === "cat") {
-      this.updateToy(dt, now);
+      this.updateActiveToy(dt, now);
       this.updateSprite(now);
       this.render();
-      this.updateDebug();
+      this.updateDebug(now);
       return;
     }
     const context = this.context(now);
@@ -235,12 +258,19 @@ class LivingCat {
       this.nextDecisionAt = this.brain.actionUntil;
     }
 
-    this.updateToy(dt, now);
+    this.updateActiveToy(dt, now);
     this.updateBehavior(dt, now);
     this.updatePhysics(dt, now);
     this.updateSprite(now);
     this.render();
-    this.updateDebug();
+    this.updateDebug(now);
+  }
+
+  updateActiveToy(dt, now) {
+    if (this.toyType === "ball") this.updateToy(dt, now);
+    else if (this.toyType === "laser") this.updateLaser();
+    else if (this.toyType === "box") this.updateBox(dt);
+    else if (this.toyType === "feather") this.updateFishingRod(dt, now);
   }
 
   beginAction(action, now) {
@@ -289,10 +319,7 @@ class LivingCat {
 
   currentToyTarget() {
     if (this.toyType === "ball") return this.toy;
-    if (this.toyType === "box") return this.toyTarget;
-    if (this.toyType === "laser" || this.toyType === "feather") {
-      return this.pointer.visible ? this.pointer : this.toyTarget;
-    }
+    if (["box", "laser", "feather"].includes(this.toyType)) return this.toyTarget;
     return null;
   }
 
@@ -359,7 +386,7 @@ class LivingCat {
           if (action === ACTIONS.PLAY && this.toyType === "ball" && this.toy && now - this.toy.spawnedAt > 900 && this.toy.platformId === this.platformId && Math.hypot(delta, target.y - this.y) < 88) {
             this.batToy(now);
           }
-          if (action === ACTIONS.PLAY && this.toyType === "box" && this.platformId === "floor" && Math.hypot(delta, target.y - this.y) < 88) {
+          if (action === ACTIONS.PLAY && this.toyType === "box" && target.platformId === this.platformId && Math.hypot(delta, target.y - this.y) < 88) {
             this.enterBox(now);
           }
         }
@@ -386,14 +413,14 @@ class LivingCat {
   }
 
   enterBox(now = performance.now()) {
-    if (!this.toyTarget || this.inBox) return;
-    const floor = this.world.get("floor");
-    this.x = Math.min(window.innerWidth - CAT_SIZE, Math.max(0, this.toyTarget.x - CAT_SIZE / 2));
-    this.y = (floor?.top ?? window.innerHeight - 38) - CAT_SIZE + CAT_FOOT_OFFSET;
+    if (!this.toyTarget || !this.box || !this.box.grounded || this.inBox) return;
+    const platform = this.world.get(this.box.platformId) || this.world.get("floor");
+    this.x = Math.min(window.innerWidth - CAT_SIZE, Math.max(0, this.box.x + this.box.width / 2 - CAT_SIZE / 2));
+    this.y = (platform?.top ?? window.innerHeight - 38) - CAT_SIZE + CAT_FOOT_OFFSET;
     this.vx = 0;
     this.vy = 0;
     this.grounded = true;
-    this.platformId = "floor";
+    this.platformId = platform?.id || "floor";
     this.inBox = true;
     this.brain.drives.anger = Math.max(0, this.brain.drives.anger - 0.12);
     this.brain.setAction(ACTIONS.SLEEP, now, 7200 + Math.random() * 5200);
@@ -505,6 +532,102 @@ class LivingCat {
     }
   }
 
+  updateLaser() {
+    if (!this.pointer.visible) return;
+    const transform = `translate3d(${this.pointer.x.toFixed(1)}px, ${this.pointer.y.toFixed(1)}px, 0) translate(-50%, -50%)`;
+    if (laserToyElement.style.transform !== transform) laserToyElement.style.transform = transform;
+    if (!this.toyTarget) this.toyTarget = { x: this.pointer.x, y: this.pointer.y, kind: "laser" };
+    else {
+      this.toyTarget.x = this.pointer.x;
+      this.toyTarget.y = this.pointer.y;
+    }
+  }
+
+  updateBox(dt) {
+    if (!this.box) return;
+    if (this.drag?.kind === "box") {
+      this.renderBox();
+      return;
+    }
+
+    const box = this.box;
+    const previousBottom = advanceBox(box, dt, window.innerWidth);
+    if (box.grounded) {
+      const support = this.world.get(box.platformId);
+      if (!isBoxOnSurface(box, support)) {
+        box.grounded = false;
+        box.platformId = null;
+      }
+    } else if (box.vy >= 0) {
+      const landing = this.world.landingCandidate(
+        previousBottom,
+        box.y + box.height,
+        box.x + 8,
+        box.x + box.width - 8,
+        5
+      );
+      if (landing) settleBox(box, landing.top, landing.id);
+    }
+
+    if (box.y > window.innerHeight + 40) {
+      const floor = this.world.get("floor");
+      box.x = Math.min(window.innerWidth - box.width - 12, Math.max(12, box.x));
+      settleBox(box, floor?.top ?? window.innerHeight - 38, "floor");
+    }
+
+    if (!this.toyTarget) this.toyTarget = { x: 0, y: 0, platformId: null, kind: "box" };
+    this.toyTarget.x = box.x + box.width / 2;
+    this.toyTarget.y = box.y + box.height;
+    this.toyTarget.platformId = box.platformId;
+    this.renderBox();
+  }
+
+  renderBox() {
+    if (!this.box) return;
+    const transform = `translate3d(${this.box.x.toFixed(1)}px, ${this.box.y.toFixed(1)}px, 0)`;
+    if (transform !== this.lastBoxTransform) {
+      boxToyElement.style.transform = transform;
+      this.lastBoxTransform = transform;
+    }
+    boxToyElement.classList.toggle("box-toy--held", this.drag?.kind === "box");
+    const platform = this.box.platformId || "airborne";
+    const grounded = String(this.box.grounded);
+    const x = this.box.x.toFixed(1);
+    const y = this.box.y.toFixed(1);
+    if (boxToyElement.dataset.platform !== platform) boxToyElement.dataset.platform = platform;
+    if (boxToyElement.dataset.grounded !== grounded) boxToyElement.dataset.grounded = grounded;
+    if (boxToyElement.dataset.x !== x) boxToyElement.dataset.x = x;
+    if (boxToyElement.dataset.y !== y) boxToyElement.dataset.y = y;
+  }
+
+  updateFishingRod(dt, now) {
+    if (!this.fishingRig) return;
+    advanceFishingRig(this.fishingRig, dt, window.innerWidth, window.innerHeight);
+    if (!this.toyTarget) this.toyTarget = { x: 0, y: 0, kind: "feather" };
+    this.toyTarget.x = this.fishingRig.lureX;
+    this.toyTarget.y = this.fishingRig.lureY;
+    this.renderFishingRod(now);
+  }
+
+  renderFishingRod(now = performance.now()) {
+    const rig = this.fishingRig;
+    if (!rig) return;
+    const rod = segmentGeometry(rig.handleX, rig.handleY, rig.tipX, rig.tipY);
+    const line = segmentGeometry(rig.tipX, rig.tipY, rig.lureX, rig.lureY);
+    const lureAngle = Math.atan2(rig.lureVy, rig.lureVx || 0.001) * 180 / Math.PI;
+
+    fishingHandleElement.style.transform = `translate3d(${(rig.handleX - 8).toFixed(1)}px, ${(rig.handleY - 8).toFixed(1)}px, 0)`;
+    fishingRodElement.style.transform = `translate3d(${rod.x.toFixed(1)}px, ${(rod.y - 2.5).toFixed(1)}px, 0) rotate(${rod.angle.toFixed(2)}deg) scaleX(${rod.length.toFixed(1)})`;
+    fishingLineElement.style.transform = `translate3d(${line.x.toFixed(1)}px, ${line.y.toFixed(1)}px, 0) rotate(${line.angle.toFixed(2)}deg) scaleX(${line.length.toFixed(1)})`;
+    featherLureElement.style.transform = `translate3d(${(rig.lureX - 17).toFixed(1)}px, ${(rig.lureY - 14).toFixed(1)}px, 0) rotate(${lureAngle.toFixed(1)}deg)`;
+    if (now >= this.nextToyDatasetAt) {
+      featherToyElement.dataset.lureX = rig.lureX.toFixed(1);
+      featherToyElement.dataset.lureY = rig.lureY.toFixed(1);
+      featherToyElement.dataset.lineLength = line.length.toFixed(1);
+      this.nextToyDatasetAt = now + 120;
+    }
+  }
+
   updateToy(dt, now) {
     if (!this.toy) return;
     if (this.drag?.kind === "toy") {
@@ -582,13 +705,18 @@ class LivingCat {
   }
 
   updateSprite(now) {
-    catElement.className = `cat cat--${this.renderState}`;
-    if (this.drag?.kind === "cat") catElement.classList.add("cat--held");
-    if (!this.grounded) catElement.classList.add("cat--airborne");
-    if (now < this.landingFlashUntil) catElement.classList.add("cat--land");
-    if (this.inBox) catElement.classList.add("cat--in-box");
-    if (this.profile.movement.ability === "turbo-sprint" && Math.abs(this.vx) > 120) catElement.classList.add("cat--sprinting");
-    if (now < this.glitchFlashUntil) catElement.classList.add("cat--glitching");
+    const classes = ["cat", `cat--${this.renderState}`];
+    if (this.drag?.kind === "cat") classes.push("cat--held");
+    if (!this.grounded) classes.push("cat--airborne");
+    if (now < this.landingFlashUntil) classes.push("cat--land");
+    if (this.inBox) classes.push("cat--in-box");
+    if (this.profile.movement.ability === "turbo-sprint" && Math.abs(this.vx) > 120) classes.push("cat--sprinting");
+    if (now < this.glitchFlashUntil) classes.push("cat--glitching");
+    const className = classes.join(" ");
+    if (className !== this.lastCatClassName) {
+      catElement.className = className;
+      this.lastCatClassName = className;
+    }
     clawMark.style.left = this.facing > 0 ? "62%" : "12%";
 
     let frameIndex = 0;
@@ -606,25 +734,43 @@ class LivingCat {
   }
 
   render() {
-    catElement.style.transform = `translate3d(${this.x.toFixed(2)}px, ${this.y.toFixed(2)}px, 0)`;
+    const transform = `translate3d(${this.x.toFixed(2)}px, ${this.y.toFixed(2)}px, 0)`;
+    if (transform !== this.lastCatTransform) {
+      catElement.style.transform = transform;
+      this.lastCatTransform = transform;
+    }
     catElement.style.setProperty("--facing", this.facing);
-    catElement.dataset.platform = this.platformId || "airborne";
-    catElement.dataset.grounded = String(this.grounded);
-    catElement.dataset.x = this.x.toFixed(1);
-    catElement.dataset.y = this.y.toFixed(1);
+    const platform = this.platformId || "airborne";
+    const grounded = String(this.grounded);
+    const x = this.x.toFixed(1);
+    const y = this.y.toFixed(1);
+    if (catElement.dataset.platform !== platform) catElement.dataset.platform = platform;
+    if (catElement.dataset.grounded !== grounded) catElement.dataset.grounded = grounded;
+    if (catElement.dataset.x !== x) catElement.dataset.x = x;
+    if (catElement.dataset.y !== y) catElement.dataset.y = y;
     const activity = this.drag?.kind === "cat"
       ? "temporarily accepting relocation"
-      : this.drag?.kind === "toy"
+      : ["toy", "box"].includes(this.drag?.kind)
         ? "watching where you put the toy"
         : actionCopy[this.brain.currentAction] || "thinking cat thoughts";
-    statusCopy.textContent = `${this.profile.name} · ${activity}`;
+    const nextStatus = `${this.profile.name} · ${activity}`;
+    if (nextStatus !== this.lastStatusCopy) {
+      statusCopy.textContent = nextStatus;
+      this.lastStatusCopy = nextStatus;
+    }
   }
 
   startDrag(kind, event) {
     if (kind === "toy" && !this.toy) return false;
+    if (kind === "box" && !this.box) return false;
     const now = performance.now();
-    const originX = kind === "cat" ? this.x : this.toy.x;
-    const originY = kind === "cat" ? this.y : this.toy.y;
+    const origin = kind === "cat"
+      ? { x: this.x, y: this.y }
+      : kind === "box"
+        ? this.box
+        : this.toy;
+    const originX = origin.x;
+    const originY = origin.y;
     this.drag = {
       kind,
       pointerId: event.pointerId,
@@ -648,12 +794,19 @@ class LivingCat {
       this.departingPlatformId = null;
       this.setRenderState(ACTIONS.INSPECT);
       this.updateSprite(now);
-    } else {
+    } else if (kind === "toy") {
       this.toy.vx = 0;
       this.toy.vy = 0;
       this.toy.grounded = false;
       this.toy.platformId = null;
       this.renderToy();
+    } else {
+      this.inBox = false;
+      this.box.vx = 0;
+      this.box.vy = 0;
+      this.box.grounded = false;
+      this.box.platformId = null;
+      this.renderBox();
     }
     return true;
   }
@@ -676,10 +829,18 @@ class LivingCat {
       this.x = Math.min(window.innerWidth - CAT_SIZE, Math.max(0, event.clientX - drag.offsetX));
       this.y = Math.min(window.innerHeight - CAT_SIZE + CAT_FOOT_OFFSET, Math.max(0, event.clientY - drag.offsetY));
       this.render();
-    } else if (this.toy) {
+    } else if (drag.kind === "toy" && this.toy) {
       this.toy.x = Math.min(window.innerWidth - this.toy.radius, Math.max(this.toy.radius, event.clientX - drag.offsetX));
       this.toy.y = Math.min(window.innerHeight - this.toy.radius, Math.max(this.toy.radius, event.clientY - drag.offsetY));
       this.renderToy();
+    } else if (drag.kind === "box" && this.box) {
+      this.box.x = Math.min(window.innerWidth - this.box.width, Math.max(0, event.clientX - drag.offsetX));
+      this.box.y = Math.min(window.innerHeight - this.box.height, Math.max(0, event.clientY - drag.offsetY));
+      if (!this.toyTarget) this.toyTarget = { x: 0, y: 0, platformId: null, kind: "box" };
+      this.toyTarget.x = this.box.x + this.box.width / 2;
+      this.toyTarget.y = this.box.y + this.box.height;
+      this.toyTarget.platformId = null;
+      this.renderBox();
     }
     return true;
   }
@@ -720,25 +881,38 @@ class LivingCat {
       if (drag.distance > 6) this.ignoreCatClickUntil = now + 350;
       this.updateSprite(now);
       this.render();
-    } else if (this.toy) {
+    } else if (drag.kind === "toy" && this.toy) {
       this.toy.vx = Math.min(760, Math.max(-760, releaseVx));
       this.toy.vy = Math.min(720, Math.max(-720, releaseVy));
       this.toy.grounded = false;
       this.toy.platformId = null;
       this.toy.lastKickedAt = now;
       this.renderToy();
+    } else if (drag.kind === "box" && this.box) {
+      this.box.vx = Math.min(460, Math.max(-460, releaseVx));
+      this.box.vy = Math.min(480, Math.max(-480, releaseVy));
+      this.box.grounded = false;
+      this.box.platformId = null;
+      this.renderBox();
     }
     return true;
   }
 
   updatePointer(x, y, speed, now) {
-    this.pointer = { x, y, speed, movedAt: now, visible: true };
-    if (this.toyType === "laser" || this.toyType === "feather") {
-      const element = this.toyType === "laser" ? laserToyElement : featherToyElement;
-      element.style.left = `${x}px`;
-      element.style.top = `${y}px`;
-      this.toyTarget = { x, y, kind: this.toyType };
+    this.pointer.x = x;
+    this.pointer.y = y;
+    this.pointer.speed = speed;
+    this.pointer.movedAt = now;
+    this.pointer.visible = true;
+    if (this.toyType === "laser") {
+      if (!this.toyTarget) this.toyTarget = { x, y, kind: "laser" };
+      else { this.toyTarget.x = x; this.toyTarget.y = y; }
+    } else if (this.toyType === "feather" && this.fishingRig) {
+      setFishingHandle(this.fishingRig, x, y);
     }
+
+    if (now - this.lastPointerReactionCheck < 30) return;
+    this.lastPointerReactionCheck = now;
     const headX = this.x + CAT_SIZE * 0.5;
     const headY = this.y + CAT_SIZE * 0.34;
     const closeToHead = Math.hypot(x - headX, y - headY) < 54;
@@ -778,7 +952,10 @@ class LivingCat {
     }
 
     this.toy = null;
+    this.box = null;
+    this.fishingRig = null;
     this.toyType = type;
+    this.toyTarget = null;
     this.inBox = false;
     toyElement.classList.remove("is-visible");
     laserToyElement.hidden = true;
@@ -788,20 +965,30 @@ class LivingCat {
     const now = performance.now();
     const floor = this.world.get("floor");
     if (type === "box") {
-      const x = Math.min(window.innerWidth - 118, Math.max(28, window.innerWidth * 0.68));
-      const y = (floor?.top ?? window.innerHeight - 38) - 54;
-      boxToyElement.style.left = `${x}px`;
-      boxToyElement.style.top = `${y}px`;
+      const controlsRect = document.querySelector(".controls").getBoundingClientRect();
+      const preferredX = window.innerWidth * 0.62;
+      const x = Math.max(28, Math.min(preferredX, controlsRect.left - 124, window.innerWidth - 120));
+      const y = (floor?.top ?? window.innerHeight - 38) - 56;
+      this.box = createBox({ x, y, platformId: "floor" });
       boxToyElement.hidden = false;
-      this.toyTarget = { x: x + 44, y: y + 30, platformId: "floor", kind: "box" };
-    } else {
+      this.toyTarget = { x: x + this.box.width / 2, y: y + this.box.height, platformId: "floor", kind: "box" };
+      this.renderBox();
+    } else if (type === "laser") {
       const x = this.pointer.visible ? this.pointer.x : window.innerWidth * 0.72;
       const y = this.pointer.visible ? this.pointer.y : window.innerHeight * 0.46;
-      const element = type === "laser" ? laserToyElement : featherToyElement;
-      element.style.left = `${x}px`;
-      element.style.top = `${y}px`;
-      element.hidden = false;
-      this.toyTarget = { x, y, kind: type };
+      laserToyElement.hidden = false;
+      this.toyTarget = { x, y, kind: "laser" };
+      this.pointer.x = x;
+      this.pointer.y = y;
+      this.pointer.visible = true;
+      this.updateLaser();
+    } else if (type === "feather") {
+      const x = window.innerWidth * 0.58;
+      const y = window.innerHeight * 0.46;
+      this.fishingRig = createFishingRig({ x, y });
+      featherToyElement.hidden = false;
+      this.toyTarget = { x: this.fishingRig.lureX, y: this.fishingRig.lureY, kind: "feather" };
+      this.renderFishingRod();
     }
 
     this.brain.noticeToy(now);
@@ -809,12 +996,16 @@ class LivingCat {
     this.beginAction(ACTIONS.PLAY, now);
     this.nextDecisionAt = this.brain.actionUntil;
     this.syncToyButtons();
-    statusCopy.textContent = `${this.profile.name} noticed the ${type}`;
+    const toyName = type === "feather" ? "fishing rod" : type;
+    statusCopy.textContent = `${this.profile.name} noticed the ${toyName}`;
+    this.lastStatusCopy = statusCopy.textContent;
   }
 
   dropToy() {
     this.toyType = "ball";
     this.toyTarget = null;
+    this.box = null;
+    this.fishingRig = null;
     this.inBox = false;
     laserToyElement.hidden = true;
     boxToyElement.hidden = true;
@@ -866,8 +1057,10 @@ class LivingCat {
     }, 1000);
   }
 
-  updateDebug() {
+  updateDebug(now = performance.now()) {
     if (debugPanel.hidden) return;
+    if (now < this.nextDebugUpdateAt) return;
+    this.nextDebugUpdateAt = now + 120;
     debugAction.textContent = this.brain.currentAction;
     debugPlatform.textContent = this.platformId || "airborne";
     debugPets.textContent = String(this.brain.memory.petCount);
@@ -929,10 +1122,10 @@ setupDriveList();
 setupRoster();
 const world = new CatWorld(habitat);
 const cat = new LivingCat(world);
-habitat.dataset.features = "autonomy personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy throw-ball";
+habitat.dataset.features = "autonomy personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy drag-box fishing-rod low-latency-cursor-toys throw-ball";
 window.catStudio = { cat, world, profiles: CAT_PROFILES, selectCat: (id) => cat.selectProfile(id) };
 let previousTime = performance.now();
-let pointerSample = { x: 0, y: 0, time: previousTime };
+let pointerSample = { x: 0, y: 0, time: previousTime, initialized: false };
 
 function frame(now) {
   const dt = Math.min(0.04, (now - previousTime) / 1000);
@@ -946,11 +1139,15 @@ window.addEventListener("pointermove", (event) => {
     event.preventDefault();
     return;
   }
+  const samples = event.getCoalescedEvents?.();
+  const latest = samples?.length ? samples[samples.length - 1] : event;
   const now = performance.now();
   const elapsed = Math.max(16, now - pointerSample.time);
-  const speed = Math.hypot(event.clientX - pointerSample.x, event.clientY - pointerSample.y) / elapsed * 1000;
-  pointerSample = { x: event.clientX, y: event.clientY, time: now };
-  cat.updatePointer(event.clientX, event.clientY, speed, now);
+  const speed = pointerSample.initialized
+    ? Math.hypot(latest.clientX - pointerSample.x, latest.clientY - pointerSample.y) / elapsed * 1000
+    : 0;
+  pointerSample = { x: latest.clientX, y: latest.clientY, time: now, initialized: true };
+  cat.updatePointer(latest.clientX, latest.clientY, speed, now);
 }, { passive: false });
 
 catElement.addEventListener("pointerdown", (event) => {
@@ -970,6 +1167,15 @@ toyElement.addEventListener("pointerdown", (event) => {
   }
 });
 
+boxToyElement.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (cat.startDrag("box", event)) {
+    try { boxToyElement.setPointerCapture?.(event.pointerId); } catch { /* Synthetic test events have no native capture target. */ }
+  }
+});
+
 window.addEventListener("pointerup", (event) => cat.endDrag(event));
 window.addEventListener("pointercancel", (event) => cat.endDrag(event));
 
@@ -978,6 +1184,12 @@ window.addEventListener("resize", () => {
   const platform = world.get(cat.platformId) || world.get("floor");
   cat.x = Math.min(window.innerWidth - CAT_SIZE, Math.max(0, cat.x));
   if (cat.grounded && platform) cat.y = platform.top - CAT_SIZE + CAT_FOOT_OFFSET;
+  if (cat.box) {
+    cat.box.x = Math.min(window.innerWidth - cat.box.width, Math.max(0, cat.box.x));
+    const boxPlatform = world.get(cat.box.platformId) || world.get("floor");
+    if (cat.box.grounded && boxPlatform) cat.box.y = boxPlatform.top - cat.box.height;
+    cat.renderBox();
+  }
 });
 
 document.addEventListener("visibilitychange", () => {

@@ -32,7 +32,8 @@ After changing the source modules, regenerate the double-clickable build with `n
 - Cursor-stroking and Pet Cat controls with purring, hissing, claw swipes, and remembered pet count
 - Droppable physics toy with gravity, shelf and floor collisions, diminishing bounces, rolling friction, wall rebounds, and repeated paw strikes from the pursuing cat
 - Direct manipulation: pick up and relocate the cat, or drag and toss the ball with release velocity preserved
-- Four working toy interactions: red ball, cursor-driven laser, cardboard sleep box, and feather wand
+- Four working toy interactions: red ball, low-latency cursor laser, draggable cardboard sleep box, and a mouse-controlled fishing rod with a springy feather lure
+- Cursor toys are rendered once per animation frame, and unchanged cat/debug DOM is no longer rewritten continuously
 - Surface navigation graph with edge-fall detection and calculated jump arcs for climbing through every habitat tier and returning safely to the floor
 - Optional live brain panel showing needs, chosen action, surface, pets, and landings
 - Pause/resume control
