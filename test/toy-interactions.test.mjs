@@ -33,9 +33,23 @@ test("the fishing rod handle tracks immediately while the lure trails within its
 
   assert.equal(rig.handleX, 520);
   assert.equal(rig.handleY, 240);
+  assert.equal(rig.direction, -1);
+  assert.ok(rig.tipX < rig.handleX);
   assert.notEqual(rig.lureX, rig.handleX);
   const line = segmentGeometry(rig.tipX, rig.tipY, rig.lureX, rig.lureY);
-  assert.ok(line.length <= FISHING_LINE_LENGTH * 1.42 + 0.001);
+  assert.ok(line.length <= FISHING_LINE_LENGTH * 1.24 + 0.001);
+});
+
+test("the fishing rod always points inward when it crosses the screen center", () => {
+  const rig = createFishingRig({ x: 700, y: 240, direction: -1 });
+  advanceFishingRig(rig, 1 / 60, 900, 700);
+  assert.equal(rig.direction, -1);
+  assert.ok(rig.tipX < rig.handleX);
+
+  setFishingHandle(rig, 200, 240);
+  advanceFishingRig(rig, 1 / 60, 900, 700);
+  assert.equal(rig.direction, 1);
+  assert.ok(rig.tipX > rig.handleX);
 });
 
 test("fishing line geometry reports a stable length and angle", () => {

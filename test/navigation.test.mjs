@@ -1,14 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { canTraverse, nextHopToward, reachablePlatforms } from "../src/navigation.mjs";
+import { canTraverse, nextHopToward, platformForTarget, reachablePlatforms } from "../src/navigation.mjs";
 
 const platforms = [
-  { id: "intro", left: 38, right: 398, top: 50, width: 360 },
-  { id: "browser", left: 404, right: 737, top: 134, width: 333 },
-  { id: "editor", left: 30, right: 363, top: 427, width: 333 },
-  { id: "shelf", left: 412, right: 692, top: 519, width: 280 },
-  { id: "floor", left: 0, right: 760, top: 799, width: 760 }
+  { id: "intro", left: 38, right: 398, top: 50, bottom: 336, width: 360 },
+  { id: "browser", left: 404, right: 737, top: 134, bottom: 379, width: 333 },
+  { id: "editor", left: 30, right: 363, top: 427, bottom: 637, width: 333 },
+  { id: "shelf", left: 412, right: 692, top: 519, bottom: 545, width: 280 },
+  { id: "floor", left: 0, right: 760, top: 799, bottom: 837, width: 760 }
 ];
 
 const byId = (id) => platforms.find((platform) => platform.id === id);
@@ -33,4 +33,15 @@ test("a nested lower panel routes through a clear edge instead of trapping the c
 test("the shelf becomes jumpable from the floor at the launch area", () => {
   const reachable = reachablePlatforms(platforms, byId("floor"), 470).map(({ id }) => id);
   assert.ok(reachable.includes("shelf"));
+});
+
+test("cursor toys map to the webpage surface they are hovering over", () => {
+  assert.equal(platformForTarget(platforms, 180, 210).id, "intro");
+  assert.equal(platformForTarget(platforms, 560, 485).id, "shelf");
+  assert.equal(platformForTarget(platforms, 700, 760).id, "floor");
+});
+
+test("ordinary cats climb one tier at a time while a super-bounce cat can skip a tier", () => {
+  assert.equal(nextHopToward(platforms, byId("floor"), byId("intro"), 1).id, "shelf");
+  assert.equal(nextHopToward(platforms, byId("floor"), byId("intro"), 1.8).id, "editor");
 });

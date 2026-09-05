@@ -10,7 +10,7 @@ const profile = (definition) => Object.freeze({
   atlas: Object.freeze(definition.atlas),
   drives: Object.freeze(definition.drives),
   instincts: Object.freeze(definition.instincts),
-  movement: Object.freeze(definition.movement),
+  movement: Object.freeze({ navigationJump: 1, ...definition.movement }),
   favoriteToys: Object.freeze(definition.favoriteToys)
 });
 
@@ -100,7 +100,7 @@ const CAT_PROFILES = Object.freeze([
     atlas: [2, 2],
     drives: { energy: 0.82, curiosity: 0.78, affection: 0.58, playfulness: 0.64, confidence: 0.99, anger: 0.18 },
     instincts: { sleep: 0.82, play: 1.02, roam: 1.22, jump: 1.2, mischief: 1.28, affection: 0.9, temper: 0.92, petIrritation: 0.035, calmRate: 1.08, hissThreshold: 0.7, clawThreshold: 0.9 },
-    movement: { speed: 1.12, jump: 1.58, toyForce: 1.52, ability: "mega-jump" },
+    movement: { speed: 1.12, jump: 1.58, navigationJump: 1.8, toyForce: 1.52, ability: "mega-jump" },
     favoriteToys: ["ball", "feather"]
   })
 ]);
@@ -358,19 +358,19 @@ function horizontalGap(a, b) {
   return 0;
 }
 
-function canTraverse(from, to) {
+function canTraverse(from, to, jumpReach = 1) {
   if (!from || !to || from.id === to.id) return false;
   const rise = from.top - to.top;
   const gap = horizontalGap(from, to);
-  if (rise > 0) return rise <= CAT_MAX_RISE && gap < 370;
+  if (rise > 0) return rise <= CAT_MAX_RISE * Math.max(1, jumpReach) && gap < 370;
   const hasDropExit = gap > 0 || to.left < from.left - 30 || to.right > from.right + 30;
   return gap < 440 && hasDropExit;
 }
 
-function reachablePlatforms(platforms, from, x) {
+function reachablePlatforms(platforms, from, x, jumpReach = 1) {
   if (!from) return [];
   return platforms.filter((candidate) => {
-    if (!canTraverse(from, candidate)) return false;
+    if (!canTraverse(from, candidate, jumpReach)) return false;
     const safeLeft = candidate.left + Math.min(42, candidate.width * 0.25);
     const safeRight = candidate.right - Math.min(42, candidate.width * 0.25);
     const nearestLanding = Math.min(safeRight, Math.max(safeLeft, x));
@@ -378,15 +378,21 @@ function reachablePlatforms(platforms, from, x) {
   });
 }
 
-function nextHopToward(platforms, from, destination) {
+function nextHopToward(platforms, from, destination, jumpReach = 1) {
   if (!from || !destination || from.id === destination.id) return null;
   const queue = [{ platform: from, firstHop: null }];
   const visited = new Set([from.id]);
+  const descending = destination.top > from.top;
+  const routeScore = (platform) => {
+    const overshootsDownwardTarget = descending && platform.top > destination.top;
+    return Math.abs(platform.top - destination.top) + (overshootsDownwardTarget ? 10_000 : 0);
+  };
+  const orderedPlatforms = [...platforms].sort((a, b) => routeScore(a) - routeScore(b));
 
   while (queue.length) {
     const current = queue.shift();
-    for (const candidate of platforms) {
-      if (visited.has(candidate.id) || !canTraverse(current.platform, candidate)) continue;
+    for (const candidate of orderedPlatforms) {
+      if (visited.has(candidate.id) || !canTraverse(current.platform, candidate, jumpReach)) continue;
       const firstHop = current.firstHop || candidate;
       if (candidate.id === destination.id) return firstHop;
       visited.add(candidate.id);
@@ -394,6 +400,23 @@ function nextHopToward(platforms, from, destination) {
     }
   }
   return null;
+}
+
+function platformForTarget(platforms, x, y, snapDistance = 150) {
+  return platforms
+    .filter((platform) => x >= platform.left && x <= platform.right)
+    .map((platform) => {
+      const bottom = Number.isFinite(platform.bottom) ? platform.bottom : platform.top;
+      const inside = y >= platform.top && y <= bottom;
+      const verticalDistance = inside ? 0 : Math.abs(platform.top - y);
+      return { platform, inside, verticalDistance };
+    })
+    .filter(({ inside, verticalDistance }) => inside || verticalDistance <= snapDistance)
+    .sort((a, b) => {
+      if (a.inside !== b.inside) return a.inside ? -1 : 1;
+      if (a.verticalDistance !== b.verticalDistance) return a.verticalDistance - b.verticalDistance;
+      return a.platform.width - b.platform.width;
+    })[0]?.platform || null;
 }
 
 function launchPoint(from, to) {
@@ -492,7 +515,7 @@ const clampInteraction = (value, min, max) => Math.min(max, Math.max(min, value)
 const BOX_WIDTH = 92;
 const BOX_HEIGHT = 56;
 const BOX_GRAVITY = 980;
-const FISHING_LINE_LENGTH = 104;
+const FISHING_LINE_LENGTH = 86;
 
 function createBox({ x, y, vx = 0, vy = 0, platformId = null }) {
   return {
@@ -548,8 +571,9 @@ function isBoxOnSurface(box, platform) {
   return overlaps && flush;
 }
 
-function createFishingRig({ x, y }) {
-  const tipX = x + 68;
+function createFishingRig({ x, y, direction = 1 }) {
+  const facing = direction < 0 ? -1 : 1;
+  const tipX = x + facing * 68;
   const tipY = y - 42;
   return {
     targetX: x,
@@ -563,7 +587,8 @@ function createFishingRig({ x, y }) {
     lureVx: 0,
     lureVy: 0,
     handleVx: 0,
-    handleVy: 0
+    handleVy: 0,
+    direction: facing
   };
 }
 
@@ -582,19 +607,17 @@ function advanceFishingRig(rig, dt, width, height) {
   rig.handleY = rig.targetY;
   rig.handleVx = clampInteraction((rig.handleX - previousHandleX) / seconds, -2200, 2200);
   rig.handleVy = clampInteraction((rig.handleY - previousHandleY) / seconds, -2200, 2200);
+  rig.direction = rig.handleX < width / 2 ? 1 : -1;
 
-  rig.tipX = clampInteraction(rig.handleX + 68 + rig.handleVx * 0.012, 8, width - 8);
-  rig.tipY = clampInteraction(rig.handleY - 42 + rig.handleVy * 0.008, 8, height - 8);
+  rig.tipX = clampInteraction(rig.handleX + rig.direction * 68 + rig.handleVx * 0.006, 8, width - 8);
+  rig.tipY = clampInteraction(rig.handleY - 42 + rig.handleVy * 0.004, 8, height - 8);
 
-  const dx = rig.tipX - rig.lureX;
-  const dy = rig.tipY - rig.lureY;
-  const distance = Math.max(0.001, Math.hypot(dx, dy));
-  const stretch = Math.max(0, distance - FISHING_LINE_LENGTH);
-  const tension = stretch * 94;
-
-  rig.lureVx += dx / distance * tension * seconds;
-  rig.lureVy += (dy / distance * tension + 430) * seconds;
-  const damping = Math.exp(-3.4 * seconds);
+  // A damped spring follows the rod tip immediately but keeps enough inertia to whip.
+  const restingX = rig.tipX;
+  const restingY = rig.tipY + FISHING_LINE_LENGTH;
+  rig.lureVx += (restingX - rig.lureX) * 118 * seconds;
+  rig.lureVy += ((restingY - rig.lureY) * 118 + 70) * seconds;
+  const damping = Math.exp(-7.2 * seconds);
   rig.lureVx = clampInteraction(rig.lureVx * damping, -1500, 1500);
   rig.lureVy = clampInteraction(rig.lureVy * damping, -1500, 1500);
   rig.lureX += rig.lureVx * seconds;
@@ -603,7 +626,7 @@ function advanceFishingRig(rig, dt, width, height) {
   const postDx = rig.lureX - rig.tipX;
   const postDy = rig.lureY - rig.tipY;
   const postDistance = Math.max(0.001, Math.hypot(postDx, postDy));
-  const maximumLength = FISHING_LINE_LENGTH * 1.42;
+  const maximumLength = FISHING_LINE_LENGTH * 1.24;
   if (postDistance > maximumLength) {
     rig.lureX = rig.tipX + postDx / postDistance * maximumLength;
     rig.lureY = rig.tipY + postDy / postDistance * maximumLength;
@@ -734,20 +757,24 @@ class CatWorld {
 
   get(id) { return this.platforms.find((platform) => platform.id === id); }
 
-  canTraverse(from, to) {
-    return canTraverse(from, to);
+  canTraverse(from, to, jumpReach = 1) {
+    return canTraverse(from, to, jumpReach);
   }
 
-  reachableFrom(platform, x) {
-    return reachablePlatforms(this.platforms, platform, x);
+  reachableFrom(platform, x, jumpReach = 1) {
+    return reachablePlatforms(this.platforms, platform, x, jumpReach);
   }
 
-  nextHopToward(from, destination) {
-    return nextHopToward(this.platforms, from, destination);
+  nextHopToward(from, destination, jumpReach = 1) {
+    return nextHopToward(this.platforms, from, destination, jumpReach);
   }
 
   launchPoint(from, to) {
     return launchPoint(from, to);
+  }
+
+  platformForTarget(x, y, snapDistance = 150) {
+    return platformForTarget(this.platforms, x, y, snapDistance);
   }
 
   landingCandidate(previousBottom, nextBottom, left, right, tolerance = 5, ignoredPlatformId = null) {
@@ -803,8 +830,10 @@ class LivingCat {
     this.lastCatTransform = "";
     this.lastCatClassName = "";
     this.lastBoxTransform = "";
+    this.lastFishingTransforms = { handle: "", rod: "", line: "", lure: "" };
     this.nextDebugUpdateAt = 0;
     this.nextToyDatasetAt = 0;
+    this.nextToyPlatformScanAt = 0;
     this.selectProfile(this.profile.id, false);
   }
 
@@ -845,6 +874,7 @@ class LivingCat {
 
   context(now) {
     const platform = this.world.get(this.platformId);
+    const jumpReach = this.profile.movement.navigationJump;
     const centerX = this.x + CAT_SIZE / 2;
     const centerY = this.y + CAT_SIZE / 2;
     const pointerDistance = Math.hypot(this.pointer.x - centerX, this.pointer.y - centerY);
@@ -857,8 +887,8 @@ class LivingCat {
       toyAvailable: Boolean(this.toyType),
       toyType: this.toyType,
       onHighPlatform: platform && platform.top < window.innerHeight * 0.55,
-      reachablePlatforms: this.world.reachableFrom(platform, centerX).length,
-      canJump: this.grounded && this.world.reachableFrom(platform, centerX).length > 0
+      reachablePlatforms: this.world.reachableFrom(platform, centerX, jumpReach).length,
+      canJump: this.grounded && this.world.reachableFrom(platform, centerX, jumpReach).length > 0
     };
   }
 
@@ -975,10 +1005,11 @@ class LivingCat {
         if (action === ACTIONS.PLAY && target.platformId && target.platformId !== this.platformId) {
           const targetPlatform = this.world.get(target.platformId);
           const currentPlatform = this.world.get(this.platformId);
-          const nextHop = this.world.nextHopToward(currentPlatform, targetPlatform);
+          const jumpReach = this.profile.movement.navigationJump;
+          const nextHop = this.world.nextHopToward(currentPlatform, targetPlatform, jumpReach);
           if (nextHop && currentPlatform) {
             const center = this.x + CAT_SIZE / 2;
-            const reachable = this.world.reachableFrom(currentPlatform, center);
+            const reachable = this.world.reachableFrom(currentPlatform, center, jumpReach);
             if (now >= this.nextJumpAt && reachable.some((candidate) => candidate.id === nextHop.id)) {
               this.jumpToPlatform(nextHop, now);
               return;
@@ -1054,7 +1085,7 @@ class LivingCat {
   jumpToInterestingPlatform() {
     const current = this.world.get(this.platformId);
     const center = this.x + CAT_SIZE / 2;
-    const reachable = this.world.reachableFrom(current, center);
+    const reachable = this.world.reachableFrom(current, center, this.profile.movement.navigationJump);
     if (!reachable.length) { this.jumpForward(0.52); return; }
     const ranked = reachable.map((platform) => ({
       platform,
@@ -1158,11 +1189,14 @@ class LivingCat {
     if (!this.pointer.visible) return;
     const transform = `translate3d(${this.pointer.x.toFixed(1)}px, ${this.pointer.y.toFixed(1)}px, 0) translate(-50%, -50%)`;
     if (laserToyElement.style.transform !== transform) laserToyElement.style.transform = transform;
-    if (!this.toyTarget) this.toyTarget = { x: this.pointer.x, y: this.pointer.y, kind: "laser" };
+    const surface = this.world.platformForTarget(this.pointer.x, this.pointer.y);
+    if (!this.toyTarget) this.toyTarget = { x: this.pointer.x, y: this.pointer.y, platformId: null, kind: "laser" };
     else {
       this.toyTarget.x = this.pointer.x;
       this.toyTarget.y = this.pointer.y;
     }
+    this.toyTarget.platformId = surface?.id || null;
+    laserToyElement.dataset.platform = this.toyTarget.platformId || "airborne";
   }
 
   updateBox(dt) {
@@ -1225,9 +1259,17 @@ class LivingCat {
   updateFishingRod(dt, now) {
     if (!this.fishingRig) return;
     advanceFishingRig(this.fishingRig, dt, window.innerWidth, window.innerHeight);
-    if (!this.toyTarget) this.toyTarget = { x: 0, y: 0, kind: "feather" };
+    if (!this.toyTarget) this.toyTarget = { x: 0, y: 0, platformId: null, kind: "feather" };
     this.toyTarget.x = this.fishingRig.lureX;
     this.toyTarget.y = this.fishingRig.lureY;
+    if (now >= this.nextToyPlatformScanAt) {
+      const surface = this.world.platformForTarget(this.fishingRig.handleX, this.fishingRig.handleY)
+        || this.world.platformForTarget(this.fishingRig.lureX, this.fishingRig.lureY, 170);
+      this.toyTarget.platformId = surface?.id || null;
+      const platform = this.toyTarget.platformId || "airborne";
+      if (featherToyElement.dataset.platform !== platform) featherToyElement.dataset.platform = platform;
+      this.nextToyPlatformScanAt = now + 70;
+    }
     this.renderFishingRod(now);
   }
 
@@ -1238,14 +1280,23 @@ class LivingCat {
     const line = segmentGeometry(rig.tipX, rig.tipY, rig.lureX, rig.lureY);
     const lureAngle = Math.atan2(rig.lureVy, rig.lureVx || 0.001) * 180 / Math.PI;
 
-    fishingHandleElement.style.transform = `translate3d(${(rig.handleX - 8).toFixed(1)}px, ${(rig.handleY - 8).toFixed(1)}px, 0)`;
-    fishingRodElement.style.transform = `translate3d(${rod.x.toFixed(1)}px, ${(rod.y - 2.5).toFixed(1)}px, 0) rotate(${rod.angle.toFixed(2)}deg) scaleX(${rod.length.toFixed(1)})`;
-    fishingLineElement.style.transform = `translate3d(${line.x.toFixed(1)}px, ${line.y.toFixed(1)}px, 0) rotate(${line.angle.toFixed(2)}deg) scaleX(${line.length.toFixed(1)})`;
-    featherLureElement.style.transform = `translate3d(${(rig.lureX - 17).toFixed(1)}px, ${(rig.lureY - 14).toFixed(1)}px, 0) rotate(${lureAngle.toFixed(1)}deg)`;
+    const handleTransform = `translate3d(${(rig.handleX - 8).toFixed(1)}px, ${(rig.handleY - 8).toFixed(1)}px, 0)`;
+    const rodTransform = `translate3d(${rod.x.toFixed(1)}px, ${(rod.y - 2.5).toFixed(1)}px, 0) rotate(${rod.angle.toFixed(2)}deg) scaleX(${rod.length.toFixed(1)})`;
+    const lineTransform = `translate3d(${line.x.toFixed(1)}px, ${line.y.toFixed(1)}px, 0) rotate(${line.angle.toFixed(2)}deg) scaleX(${line.length.toFixed(1)})`;
+    const lureTransform = `translate3d(${(rig.lureX - 17).toFixed(1)}px, ${(rig.lureY - 14).toFixed(1)}px, 0) rotate(${lureAngle.toFixed(1)}deg)`;
+    if (handleTransform !== this.lastFishingTransforms.handle) fishingHandleElement.style.transform = handleTransform;
+    if (rodTransform !== this.lastFishingTransforms.rod) fishingRodElement.style.transform = rodTransform;
+    if (lineTransform !== this.lastFishingTransforms.line) fishingLineElement.style.transform = lineTransform;
+    if (lureTransform !== this.lastFishingTransforms.lure) featherLureElement.style.transform = lureTransform;
+    this.lastFishingTransforms.handle = handleTransform;
+    this.lastFishingTransforms.rod = rodTransform;
+    this.lastFishingTransforms.line = lineTransform;
+    this.lastFishingTransforms.lure = lureTransform;
     if (now >= this.nextToyDatasetAt) {
       featherToyElement.dataset.lureX = rig.lureX.toFixed(1);
       featherToyElement.dataset.lureY = rig.lureY.toFixed(1);
       featherToyElement.dataset.lineLength = line.length.toFixed(1);
+      featherToyElement.dataset.direction = rig.direction > 0 ? "right" : "left";
       this.nextToyDatasetAt = now + 120;
     }
   }
@@ -1607,7 +1658,7 @@ class LivingCat {
     } else if (type === "feather") {
       const x = window.innerWidth * 0.58;
       const y = window.innerHeight * 0.46;
-      this.fishingRig = createFishingRig({ x, y });
+      this.fishingRig = createFishingRig({ x, y, direction: x < window.innerWidth / 2 ? 1 : -1 });
       featherToyElement.hidden = false;
       this.toyTarget = { x: this.fishingRig.lureX, y: this.fishingRig.lureY, kind: "feather" };
       this.renderFishingRod();
@@ -1634,7 +1685,7 @@ class LivingCat {
     featherToyElement.hidden = true;
     const current = this.world.get(this.platformId) || this.world.get("floor");
     const center = this.x + CAT_SIZE / 2;
-    const reachable = this.world.reachableFrom(current, center).filter((platform) => platform.width > 100);
+    const reachable = this.world.reachableFrom(current, center, this.profile.movement.navigationJump).filter((platform) => platform.width > 100);
     const sameSurface = current?.width > 150 ? current : null;
     const platform = reachable[Math.floor(Math.random() * reachable.length)] || sameSurface || this.world.get("floor");
     let leftBound = platform.left + 25;
@@ -1744,7 +1795,7 @@ setupDriveList();
 setupRoster();
 const world = new CatWorld(habitat);
 const cat = new LivingCat(world);
-habitat.dataset.features = "autonomy personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy drag-box fishing-rod low-latency-cursor-toys throw-ball";
+habitat.dataset.features = "autonomy personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy drag-box fishing-rod inward-facing-rod cursor-toy-platform-targeting super-bounce low-latency-cursor-toys throw-ball";
 window.catStudio = { cat, world, profiles: CAT_PROFILES, selectCat: (id) => cat.selectProfile(id) };
 let previousTime = performance.now();
 let pointerSample = { x: 0, y: 0, time: previousTime, initialized: false };

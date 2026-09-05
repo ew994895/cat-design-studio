@@ -334,14 +334,12 @@ h1 { margin: 0; max-width: 430px; font-size: clamp(30px, 3.2vw, 50px); line-heig
   width: 1px;
   height: 1px;
   background: rgba(226,232,230,.76);
-  box-shadow: 0 0 3px rgba(255,255,255,.35);
   transform-origin: 0 50%;
 }
 .feather-lure {
   z-index: 2;
   width: 34px;
   height: 28px;
-  filter: drop-shadow(0 3px 5px rgba(0,0,0,.42));
 }
 .feather-plume {
   position: absolute;

@@ -1,6 +1,6 @@
 import { ACTIONS, CatBrain } from "./brain.mjs";
 import { CAT_PROFILES, DEFAULT_CAT_ID, getCatProfile } from "./cats.mjs";
-import { canTraverse, launchPoint, nextHopToward, reachablePlatforms } from "./navigation.mjs";
+import { canTraverse, launchPoint, nextHopToward, platformForTarget, reachablePlatforms } from "./navigation.mjs";
 import { advanceToy, bounceToy, createToy, isToyOnSurface, kickToy, TOY_RADIUS } from "./toy-physics.mjs";
 import {
   advanceBox,
@@ -112,20 +112,24 @@ class CatWorld {
 
   get(id) { return this.platforms.find((platform) => platform.id === id); }
 
-  canTraverse(from, to) {
-    return canTraverse(from, to);
+  canTraverse(from, to, jumpReach = 1) {
+    return canTraverse(from, to, jumpReach);
   }
 
-  reachableFrom(platform, x) {
-    return reachablePlatforms(this.platforms, platform, x);
+  reachableFrom(platform, x, jumpReach = 1) {
+    return reachablePlatforms(this.platforms, platform, x, jumpReach);
   }
 
-  nextHopToward(from, destination) {
-    return nextHopToward(this.platforms, from, destination);
+  nextHopToward(from, destination, jumpReach = 1) {
+    return nextHopToward(this.platforms, from, destination, jumpReach);
   }
 
   launchPoint(from, to) {
     return launchPoint(from, to);
+  }
+
+  platformForTarget(x, y, snapDistance = 150) {
+    return platformForTarget(this.platforms, x, y, snapDistance);
   }
 
   landingCandidate(previousBottom, nextBottom, left, right, tolerance = 5, ignoredPlatformId = null) {
@@ -181,8 +185,10 @@ class LivingCat {
     this.lastCatTransform = "";
     this.lastCatClassName = "";
     this.lastBoxTransform = "";
+    this.lastFishingTransforms = { handle: "", rod: "", line: "", lure: "" };
     this.nextDebugUpdateAt = 0;
     this.nextToyDatasetAt = 0;
+    this.nextToyPlatformScanAt = 0;
     this.selectProfile(this.profile.id, false);
   }
 
@@ -223,6 +229,7 @@ class LivingCat {
 
   context(now) {
     const platform = this.world.get(this.platformId);
+    const jumpReach = this.profile.movement.navigationJump;
     const centerX = this.x + CAT_SIZE / 2;
     const centerY = this.y + CAT_SIZE / 2;
     const pointerDistance = Math.hypot(this.pointer.x - centerX, this.pointer.y - centerY);
@@ -235,8 +242,8 @@ class LivingCat {
       toyAvailable: Boolean(this.toyType),
       toyType: this.toyType,
       onHighPlatform: platform && platform.top < window.innerHeight * 0.55,
-      reachablePlatforms: this.world.reachableFrom(platform, centerX).length,
-      canJump: this.grounded && this.world.reachableFrom(platform, centerX).length > 0
+      reachablePlatforms: this.world.reachableFrom(platform, centerX, jumpReach).length,
+      canJump: this.grounded && this.world.reachableFrom(platform, centerX, jumpReach).length > 0
     };
   }
 
@@ -353,10 +360,11 @@ class LivingCat {
         if (action === ACTIONS.PLAY && target.platformId && target.platformId !== this.platformId) {
           const targetPlatform = this.world.get(target.platformId);
           const currentPlatform = this.world.get(this.platformId);
-          const nextHop = this.world.nextHopToward(currentPlatform, targetPlatform);
+          const jumpReach = this.profile.movement.navigationJump;
+          const nextHop = this.world.nextHopToward(currentPlatform, targetPlatform, jumpReach);
           if (nextHop && currentPlatform) {
             const center = this.x + CAT_SIZE / 2;
-            const reachable = this.world.reachableFrom(currentPlatform, center);
+            const reachable = this.world.reachableFrom(currentPlatform, center, jumpReach);
             if (now >= this.nextJumpAt && reachable.some((candidate) => candidate.id === nextHop.id)) {
               this.jumpToPlatform(nextHop, now);
               return;
@@ -432,7 +440,7 @@ class LivingCat {
   jumpToInterestingPlatform() {
     const current = this.world.get(this.platformId);
     const center = this.x + CAT_SIZE / 2;
-    const reachable = this.world.reachableFrom(current, center);
+    const reachable = this.world.reachableFrom(current, center, this.profile.movement.navigationJump);
     if (!reachable.length) { this.jumpForward(0.52); return; }
     const ranked = reachable.map((platform) => ({
       platform,
@@ -536,11 +544,14 @@ class LivingCat {
     if (!this.pointer.visible) return;
     const transform = `translate3d(${this.pointer.x.toFixed(1)}px, ${this.pointer.y.toFixed(1)}px, 0) translate(-50%, -50%)`;
     if (laserToyElement.style.transform !== transform) laserToyElement.style.transform = transform;
-    if (!this.toyTarget) this.toyTarget = { x: this.pointer.x, y: this.pointer.y, kind: "laser" };
+    const surface = this.world.platformForTarget(this.pointer.x, this.pointer.y);
+    if (!this.toyTarget) this.toyTarget = { x: this.pointer.x, y: this.pointer.y, platformId: null, kind: "laser" };
     else {
       this.toyTarget.x = this.pointer.x;
       this.toyTarget.y = this.pointer.y;
     }
+    this.toyTarget.platformId = surface?.id || null;
+    laserToyElement.dataset.platform = this.toyTarget.platformId || "airborne";
   }
 
   updateBox(dt) {
@@ -603,9 +614,17 @@ class LivingCat {
   updateFishingRod(dt, now) {
     if (!this.fishingRig) return;
     advanceFishingRig(this.fishingRig, dt, window.innerWidth, window.innerHeight);
-    if (!this.toyTarget) this.toyTarget = { x: 0, y: 0, kind: "feather" };
+    if (!this.toyTarget) this.toyTarget = { x: 0, y: 0, platformId: null, kind: "feather" };
     this.toyTarget.x = this.fishingRig.lureX;
     this.toyTarget.y = this.fishingRig.lureY;
+    if (now >= this.nextToyPlatformScanAt) {
+      const surface = this.world.platformForTarget(this.fishingRig.handleX, this.fishingRig.handleY)
+        || this.world.platformForTarget(this.fishingRig.lureX, this.fishingRig.lureY, 170);
+      this.toyTarget.platformId = surface?.id || null;
+      const platform = this.toyTarget.platformId || "airborne";
+      if (featherToyElement.dataset.platform !== platform) featherToyElement.dataset.platform = platform;
+      this.nextToyPlatformScanAt = now + 70;
+    }
     this.renderFishingRod(now);
   }
 
@@ -616,14 +635,23 @@ class LivingCat {
     const line = segmentGeometry(rig.tipX, rig.tipY, rig.lureX, rig.lureY);
     const lureAngle = Math.atan2(rig.lureVy, rig.lureVx || 0.001) * 180 / Math.PI;
 
-    fishingHandleElement.style.transform = `translate3d(${(rig.handleX - 8).toFixed(1)}px, ${(rig.handleY - 8).toFixed(1)}px, 0)`;
-    fishingRodElement.style.transform = `translate3d(${rod.x.toFixed(1)}px, ${(rod.y - 2.5).toFixed(1)}px, 0) rotate(${rod.angle.toFixed(2)}deg) scaleX(${rod.length.toFixed(1)})`;
-    fishingLineElement.style.transform = `translate3d(${line.x.toFixed(1)}px, ${line.y.toFixed(1)}px, 0) rotate(${line.angle.toFixed(2)}deg) scaleX(${line.length.toFixed(1)})`;
-    featherLureElement.style.transform = `translate3d(${(rig.lureX - 17).toFixed(1)}px, ${(rig.lureY - 14).toFixed(1)}px, 0) rotate(${lureAngle.toFixed(1)}deg)`;
+    const handleTransform = `translate3d(${(rig.handleX - 8).toFixed(1)}px, ${(rig.handleY - 8).toFixed(1)}px, 0)`;
+    const rodTransform = `translate3d(${rod.x.toFixed(1)}px, ${(rod.y - 2.5).toFixed(1)}px, 0) rotate(${rod.angle.toFixed(2)}deg) scaleX(${rod.length.toFixed(1)})`;
+    const lineTransform = `translate3d(${line.x.toFixed(1)}px, ${line.y.toFixed(1)}px, 0) rotate(${line.angle.toFixed(2)}deg) scaleX(${line.length.toFixed(1)})`;
+    const lureTransform = `translate3d(${(rig.lureX - 17).toFixed(1)}px, ${(rig.lureY - 14).toFixed(1)}px, 0) rotate(${lureAngle.toFixed(1)}deg)`;
+    if (handleTransform !== this.lastFishingTransforms.handle) fishingHandleElement.style.transform = handleTransform;
+    if (rodTransform !== this.lastFishingTransforms.rod) fishingRodElement.style.transform = rodTransform;
+    if (lineTransform !== this.lastFishingTransforms.line) fishingLineElement.style.transform = lineTransform;
+    if (lureTransform !== this.lastFishingTransforms.lure) featherLureElement.style.transform = lureTransform;
+    this.lastFishingTransforms.handle = handleTransform;
+    this.lastFishingTransforms.rod = rodTransform;
+    this.lastFishingTransforms.line = lineTransform;
+    this.lastFishingTransforms.lure = lureTransform;
     if (now >= this.nextToyDatasetAt) {
       featherToyElement.dataset.lureX = rig.lureX.toFixed(1);
       featherToyElement.dataset.lureY = rig.lureY.toFixed(1);
       featherToyElement.dataset.lineLength = line.length.toFixed(1);
+      featherToyElement.dataset.direction = rig.direction > 0 ? "right" : "left";
       this.nextToyDatasetAt = now + 120;
     }
   }
@@ -985,7 +1013,7 @@ class LivingCat {
     } else if (type === "feather") {
       const x = window.innerWidth * 0.58;
       const y = window.innerHeight * 0.46;
-      this.fishingRig = createFishingRig({ x, y });
+      this.fishingRig = createFishingRig({ x, y, direction: x < window.innerWidth / 2 ? 1 : -1 });
       featherToyElement.hidden = false;
       this.toyTarget = { x: this.fishingRig.lureX, y: this.fishingRig.lureY, kind: "feather" };
       this.renderFishingRod();
@@ -1012,7 +1040,7 @@ class LivingCat {
     featherToyElement.hidden = true;
     const current = this.world.get(this.platformId) || this.world.get("floor");
     const center = this.x + CAT_SIZE / 2;
-    const reachable = this.world.reachableFrom(current, center).filter((platform) => platform.width > 100);
+    const reachable = this.world.reachableFrom(current, center, this.profile.movement.navigationJump).filter((platform) => platform.width > 100);
     const sameSurface = current?.width > 150 ? current : null;
     const platform = reachable[Math.floor(Math.random() * reachable.length)] || sameSurface || this.world.get("floor");
     let leftBound = platform.left + 25;
@@ -1122,7 +1150,7 @@ setupDriveList();
 setupRoster();
 const world = new CatWorld(habitat);
 const cat = new LivingCat(world);
-habitat.dataset.features = "autonomy personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy drag-box fishing-rod low-latency-cursor-toys throw-ball";
+habitat.dataset.features = "autonomy personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy drag-box fishing-rod inward-facing-rod cursor-toy-platform-targeting super-bounce low-latency-cursor-toys throw-ball";
 window.catStudio = { cat, world, profiles: CAT_PROFILES, selectCat: (id) => cat.selectProfile(id) };
 let previousTime = performance.now();
 let pointerSample = { x: 0, y: 0, time: previousTime, initialized: false };

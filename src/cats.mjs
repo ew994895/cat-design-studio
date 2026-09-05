@@ -3,7 +3,7 @@ const profile = (definition) => Object.freeze({
   atlas: Object.freeze(definition.atlas),
   drives: Object.freeze(definition.drives),
   instincts: Object.freeze(definition.instincts),
-  movement: Object.freeze(definition.movement),
+  movement: Object.freeze({ navigationJump: 1, ...definition.movement }),
   favoriteToys: Object.freeze(definition.favoriteToys)
 });
 
@@ -93,7 +93,7 @@ export const CAT_PROFILES = Object.freeze([
     atlas: [2, 2],
     drives: { energy: 0.82, curiosity: 0.78, affection: 0.58, playfulness: 0.64, confidence: 0.99, anger: 0.18 },
     instincts: { sleep: 0.82, play: 1.02, roam: 1.22, jump: 1.2, mischief: 1.28, affection: 0.9, temper: 0.92, petIrritation: 0.035, calmRate: 1.08, hissThreshold: 0.7, clawThreshold: 0.9 },
-    movement: { speed: 1.12, jump: 1.58, toyForce: 1.52, ability: "mega-jump" },
+    movement: { speed: 1.12, jump: 1.58, navigationJump: 1.8, toyForce: 1.52, ability: "mega-jump" },
     favoriteToys: ["ball", "feather"]
   })
 ]);

@@ -20,8 +20,16 @@ test("each cat has a unique identity and complete instinct profile", () => {
     assert.ok(cat.instincts.temper >= 0);
     assert.ok(cat.movement.speed > 0);
     assert.ok(cat.movement.jump > 0);
+    assert.ok(cat.movement.navigationJump >= 1);
     assert.ok(cat.favoriteToys.length > 0);
   }
+});
+
+test("only the designated mega-jump cat gets super-bounce navigation", () => {
+  const superBounceCats = CAT_PROFILES.filter((cat) => cat.movement.navigationJump > 1);
+  assert.deepEqual(superBounceCats.map((cat) => cat.id), ["root"]);
+  assert.equal(superBounceCats[0].rarity, "legendary");
+  assert.equal(superBounceCats[0].movement.ability, "mega-jump");
 });
 
 test("unknown cats safely fall back to the default cat", () => {

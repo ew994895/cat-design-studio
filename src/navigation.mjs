@@ -6,19 +6,19 @@ export function horizontalGap(a, b) {
   return 0;
 }
 
-export function canTraverse(from, to) {
+export function canTraverse(from, to, jumpReach = 1) {
   if (!from || !to || from.id === to.id) return false;
   const rise = from.top - to.top;
   const gap = horizontalGap(from, to);
-  if (rise > 0) return rise <= CAT_MAX_RISE && gap < 370;
+  if (rise > 0) return rise <= CAT_MAX_RISE * Math.max(1, jumpReach) && gap < 370;
   const hasDropExit = gap > 0 || to.left < from.left - 30 || to.right > from.right + 30;
   return gap < 440 && hasDropExit;
 }
 
-export function reachablePlatforms(platforms, from, x) {
+export function reachablePlatforms(platforms, from, x, jumpReach = 1) {
   if (!from) return [];
   return platforms.filter((candidate) => {
-    if (!canTraverse(from, candidate)) return false;
+    if (!canTraverse(from, candidate, jumpReach)) return false;
     const safeLeft = candidate.left + Math.min(42, candidate.width * 0.25);
     const safeRight = candidate.right - Math.min(42, candidate.width * 0.25);
     const nearestLanding = Math.min(safeRight, Math.max(safeLeft, x));
@@ -26,15 +26,21 @@ export function reachablePlatforms(platforms, from, x) {
   });
 }
 
-export function nextHopToward(platforms, from, destination) {
+export function nextHopToward(platforms, from, destination, jumpReach = 1) {
   if (!from || !destination || from.id === destination.id) return null;
   const queue = [{ platform: from, firstHop: null }];
   const visited = new Set([from.id]);
+  const descending = destination.top > from.top;
+  const routeScore = (platform) => {
+    const overshootsDownwardTarget = descending && platform.top > destination.top;
+    return Math.abs(platform.top - destination.top) + (overshootsDownwardTarget ? 10_000 : 0);
+  };
+  const orderedPlatforms = [...platforms].sort((a, b) => routeScore(a) - routeScore(b));
 
   while (queue.length) {
     const current = queue.shift();
-    for (const candidate of platforms) {
-      if (visited.has(candidate.id) || !canTraverse(current.platform, candidate)) continue;
+    for (const candidate of orderedPlatforms) {
+      if (visited.has(candidate.id) || !canTraverse(current.platform, candidate, jumpReach)) continue;
       const firstHop = current.firstHop || candidate;
       if (candidate.id === destination.id) return firstHop;
       visited.add(candidate.id);
@@ -42,6 +48,23 @@ export function nextHopToward(platforms, from, destination) {
     }
   }
   return null;
+}
+
+export function platformForTarget(platforms, x, y, snapDistance = 150) {
+  return platforms
+    .filter((platform) => x >= platform.left && x <= platform.right)
+    .map((platform) => {
+      const bottom = Number.isFinite(platform.bottom) ? platform.bottom : platform.top;
+      const inside = y >= platform.top && y <= bottom;
+      const verticalDistance = inside ? 0 : Math.abs(platform.top - y);
+      return { platform, inside, verticalDistance };
+    })
+    .filter(({ inside, verticalDistance }) => inside || verticalDistance <= snapDistance)
+    .sort((a, b) => {
+      if (a.inside !== b.inside) return a.inside ? -1 : 1;
+      if (a.verticalDistance !== b.verticalDistance) return a.verticalDistance - b.verticalDistance;
+      return a.platform.width - b.platform.width;
+    })[0]?.platform || null;
 }
 
 export function launchPoint(from, to) {
