@@ -224,21 +224,20 @@ h1 { margin: 0; max-width: 430px; font-size: clamp(30px, 3.2vw, 50px); line-heig
   display: none;
   width: 20px;
   height: 20px;
-  border: 2px solid #fff7e5;
+  border: 2px solid #861920;
   border-radius: 50%;
-  background: radial-gradient(circle at 34% 28%, #fff7df 0 10%, #f1bd78 30%, #c87852 100%);
-  box-shadow: 0 0 0 3px rgba(241,189,120,.18), 0 0 18px rgba(241,189,120,.42), 0 8px 16px rgba(0,0,0,.4);
-  animation: toy-pulse 1.1s ease-in-out infinite;
+  background: #e3343f;
+  box-shadow: 0 5px 9px rgba(0,0,0,.35);
   cursor: grab;
   touch-action: none;
   user-select: none;
 }
 .toy::before,
-.toy::after { content: ""; position: absolute; width: 6px; height: 6px; border: 1px solid #f4f0df; border-radius: 50%; top: -6px; }
-.toy::before { left: -4px; }
-.toy::after { right: -4px; }
+.toy::after { content: none; }
 .toy.is-visible { display: block; }
-.toy.toy--held { z-index: 55; cursor: grabbing; box-shadow: 0 0 0 4px rgba(241,189,120,.22), 0 0 24px rgba(241,189,120,.62), 0 12px 20px rgba(0,0,0,.45); }
+.toy.toy--held { z-index: 55; cursor: grabbing; box-shadow: 0 0 0 4px rgba(227,52,63,.2), 0 0 18px rgba(227,52,63,.48), 0 12px 20px rgba(0,0,0,.45); }
+
+#toy-button span { color: #e3343f; }
 
 .particles { position: absolute; inset: 0; z-index: 24; pointer-events: none; }
 .heart { position: absolute; color: #f0b4aa; font-size: 13px; animation: heart-up 1.15s ease-out forwards; }
@@ -314,7 +313,6 @@ h1 { margin: 0; max-width: 430px; font-size: clamp(30px, 3.2vw, 50px); line-heig
 @keyframes groom { 0%,100% { transform: scaleX(calc(var(--facing) * 1)) rotate(0); } 50% { transform: scaleX(calc(var(--facing) * .94)) rotate(calc(var(--facing) * 4deg)); } }
 @keyframes land { 0% { transform: scaleX(calc(var(--facing) * .92)) scaleY(1.12); } 55% { transform: scaleX(calc(var(--facing) * 1.13)) scaleY(.75); } 100% { transform: scaleX(var(--facing)) scaleY(1); } }
 @keyframes float-z { from { opacity: 0; transform: translate(0,6px); } 35% { opacity: .8; } to { opacity: 0; transform: translate(10px,-15px); } }
-@keyframes toy-pulse { 0%,100% { transform: scale(1) rotate(-5deg); } 50% { transform: scale(1.08) rotate(5deg); } }
 @keyframes heart-up { 0% { opacity: 0; transform: translate(-50%,0) scale(.7); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(calc(-50% + var(--drift)), -42px) scale(1.1); } }
 
 @media (max-width: 980px) {
