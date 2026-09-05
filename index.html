@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0b0d10" />
     <title>Cat Design Studio — Living Widget Prototype</title>
-    <link rel="stylesheet" href="./styles.css?v=0.2" />
+    <link rel="stylesheet" href="./styles.css?v=0.3" />
   </head>
   <body>
     <main id="habitat" class="habitat" aria-label="A digital habitat for the widget cat">
@@ -16,8 +16,8 @@
         <span class="eyebrow">CAT DESIGN STUDIO / PROTOTYPE 0.1</span>
         <h1 id="title">Your computer has a new resident.</h1>
         <p>
-          It has needs, preferences, and a mind of its own. Stroke its head, pick it up, toss its toy,
-          or leave it alone and watch what it chooses.
+          Every cat has its own needs, preferences, and temper. Choose one, stroke its head, toss its
+          toy, or leave it alone and watch what it chooses.
         </p>
         <div class="status-line">
           <span class="status-dot" aria-hidden="true"></span>
@@ -61,12 +61,17 @@
       </div>
 
       <div id="toy" class="toy" role="img" aria-label="A draggable bouncing toy ball" title="Drag to pick up and toss"><span></span></div>
+      <div id="laser-toy" class="laser-toy" role="img" aria-label="A laser pointer dot" hidden></div>
+      <div id="box-toy" class="box-toy" role="img" aria-label="A cardboard box for cats" hidden><span>CAT.EXE</span></div>
+      <div id="feather-toy" class="feather-toy" role="img" aria-label="A feather wand" hidden><span class="feather-string"></span><span class="feather">◆</span></div>
       <div id="particles" class="particles" aria-hidden="true"></div>
 
-      <div id="cat" class="cat cat--idle" role="img" aria-label="A small autonomous black widget cat" title="Drag to pick up and move">
-        <img id="cat-sprite" class="cat-sprite" src="./assets/animations/idle-v1/frame-01.png" alt="" draggable="false" />
+      <div id="cat" class="cat cat--idle" role="img" aria-label="Byte, a common autonomous widget cat" title="Drag to pick up and move">
+        <img id="cat-sprite" class="cat-art cat-sprite" src="./assets/animations/idle-v1/frame-01.png" alt="" draggable="false" />
+        <span id="cat-portrait" class="cat-art cat-portrait" aria-hidden="true"></span>
         <span class="sleep-mark sleep-mark--one">z</span>
         <span class="sleep-mark sleep-mark--two">z</span>
+        <span class="claw-mark" aria-hidden="true">///</span>
       </div>
 
       <div class="floor" data-cat-platform="floor" aria-hidden="true">
@@ -80,19 +85,50 @@
         </header>
         <div id="drive-list" class="drive-list"></div>
         <dl>
+          <div><dt>cat</dt><dd id="debug-name">Byte</dd></div>
+          <div><dt>rarity</dt><dd id="debug-rarity">common</dd></div>
+          <div><dt>ability</dt><dd id="debug-ability">steady</dd></div>
           <div><dt>surface</dt><dd id="debug-platform">floor</dd></div>
           <div><dt>pets</dt><dd id="debug-pets">0</dd></div>
           <div><dt>landings</dt><dd id="debug-jumps">0</dd></div>
         </dl>
       </aside>
 
+      <aside id="cat-roster" class="cat-roster" aria-label="Choose a cat">
+        <header class="roster-header">
+          <div>
+            <span class="eyebrow">CAT COLLECTOR / STARTER ROSTER</span>
+            <h2>Choose your resident</h2>
+          </div>
+          <button id="roster-close" type="button" aria-label="Close cat roster">×</button>
+        </header>
+        <p class="roster-intro">Rarity changes the look. Personality changes the life.</p>
+        <div id="cat-grid" class="cat-grid"></div>
+      </aside>
+
+      <aside id="toy-tray" class="toy-tray" aria-label="Choose a toy" hidden>
+        <header>
+          <span class="eyebrow">TOYBOX.EXE</span>
+          <strong>Choose an interaction</strong>
+        </header>
+        <div class="toy-grid">
+          <button type="button" data-toy-type="ball" aria-pressed="false"><span class="toy-icon toy-icon--ball">●</span><strong>Red ball</strong><small>bounce · roll · bat</small></button>
+          <button type="button" data-toy-type="laser" aria-pressed="false"><span class="toy-icon toy-icon--laser">•</span><strong>Laser</strong><small>aim · stalk · sprint</small></button>
+          <button type="button" data-toy-type="box" aria-pressed="false"><span class="toy-icon toy-icon--box">□</span><strong>Box</strong><small>hide · loaf · sleep</small></button>
+          <button type="button" data-toy-type="feather" aria-pressed="false"><span class="toy-icon toy-icon--feather">◆</span><strong>Feather</strong><small>drag · leap · pounce</small></button>
+        </div>
+      </aside>
+
       <nav class="controls" aria-label="Habitat controls">
-        <button id="toy-button" type="button"><span aria-hidden="true">●</span> Drop a toy</button>
+        <button id="roster-button" type="button" aria-pressed="true">Choose cat</button>
+        <button id="toy-menu-button" type="button" aria-pressed="false">Toys</button>
+        <button id="toy-button" type="button"><span aria-hidden="true">●</span> Drop ball</button>
+        <button id="pet-button" type="button">Pet cat</button>
         <button id="debug-button" type="button" aria-pressed="false">Show brain</button>
         <button id="pause-button" type="button" aria-pressed="false">Pause</button>
       </nav>
     </main>
 
-    <script src="./src/app.bundle.js?v=0.9"></script>
+    <script src="./src/app.bundle.js?v=1.0"></script>
   </body>
 </html>

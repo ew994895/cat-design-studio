@@ -2,23 +2,28 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 
 const projectRoot = new URL("../", import.meta.url);
 const brainUrl = new URL("src/brain.mjs", projectRoot);
+const catsUrl = new URL("src/cats.mjs", projectRoot);
 const navigationUrl = new URL("src/navigation.mjs", projectRoot);
 const toyPhysicsUrl = new URL("src/toy-physics.mjs", projectRoot);
 const appUrl = new URL("src/app.mjs", projectRoot);
 const outputUrl = new URL("src/app.bundle.js", projectRoot);
+const catAtlasUrl = new URL("assets/cats/starter-roster-v1.png", projectRoot);
 const idleFrameUrls = Array.from({ length: 8 }, (_, index) =>
   new URL(`assets/animations/idle-v1/frame-${String(index + 1).padStart(2, "0")}.png`, projectRoot)
 );
 
-const [brainSource, navigationSource, toyPhysicsSource, appSource, ...idleFrameBuffers] = await Promise.all([
+const [brainSource, catsSource, navigationSource, toyPhysicsSource, appSource, catAtlasBuffer] = await Promise.all([
   readFile(brainUrl, "utf8"),
+  readFile(catsUrl, "utf8"),
   readFile(navigationUrl, "utf8"),
   readFile(toyPhysicsUrl, "utf8"),
   readFile(appUrl, "utf8"),
-  ...idleFrameUrls.map((url) => readFile(url))
+  readFile(catAtlasUrl)
 ]);
+const idleFrameBuffers = await Promise.all(idleFrameUrls.map((url) => readFile(url)));
 
 const bundledBrain = brainSource.replace(/^export\s+/gm, "");
+const bundledCats = catsSource.replace(/^export\s+/gm, "");
 const bundledNavigation = navigationSource.replace(/^export\s+/gm, "");
 const bundledToyPhysics = toyPhysicsSource.replace(/^export\s+/gm, "");
 const bundledApp = appSource.replace(/^import\s+\{[^\n]+\}\s+from\s+["'][^"']+["'];\s*\n/gm, "");
@@ -27,7 +32,8 @@ const embeddedIdleFrames = idleFrameBuffers.map((buffer) =>
   `data:image/png;base64,${buffer.toString("base64")}`
 );
 const embeddedFramesSource = `const EMBEDDED_IDLE_FRAMES = ${JSON.stringify(embeddedIdleFrames)};`;
-const bundle = `${banner}(() => {\n  "use strict";\n\n${embeddedFramesSource}\n\n${bundledBrain}\n\n${bundledNavigation}\n\n${bundledToyPhysics}\n\n${bundledApp}\n})();\n`;
+const embeddedAtlasSource = `const EMBEDDED_CAT_ATLAS = "data:image/png;base64,${catAtlasBuffer.toString("base64")}";`;
+const bundle = `${banner}(() => {\n  "use strict";\n\n${embeddedFramesSource}\n${embeddedAtlasSource}\n\n${bundledCats}\n\n${bundledBrain}\n\n${bundledNavigation}\n\n${bundledToyPhysics}\n\n${bundledApp}\n})();\n`;
 
 await mkdir(new URL("src/", projectRoot), { recursive: true });
 await writeFile(outputUrl, bundle, "utf8");

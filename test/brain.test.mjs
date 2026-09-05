@@ -29,6 +29,22 @@ test("petting creates a purr response and strengthens the bond", () => {
   assert.equal(brain.memory.petCount, 1);
 });
 
+test("an easily irritated cat hisses and then claws when over-petted", () => {
+  const brain = new CatBrain({
+    random: () => 0,
+    profile: {
+      id: "testy",
+      drives: { anger: 0.6 },
+      instincts: { temper: 1.6, petIrritation: 0.14, hissThreshold: 0.65, clawThreshold: 0.82 }
+    }
+  });
+  brain.pet(1, 2_000);
+  assert.equal(brain.currentAction, ACTIONS.HISS);
+  brain.pet(1.2, 2_200);
+  assert.equal(brain.currentAction, ACTIONS.CLAW);
+  assert.ok(brain.drives.anger >= 0.82);
+});
+
 test("drive values stay bounded during long updates", () => {
   const brain = new CatBrain({ random: () => 0.5 });
   for (let i = 0; i < 20_000; i += 1) brain.tick(0.1, { pointerMoved: i % 2 === 0 });
