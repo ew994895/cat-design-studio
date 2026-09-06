@@ -573,6 +573,59 @@ function launchPoint(from, to) {
 }
 
 
+const TARGET_FRAME_MS = 1000 / 60;
+
+const blend = (current, sample, weight) => current + (sample - current) * weight;
+
+class PerformanceGovernor {
+  constructor({ enterPressure = 28, recoveryFrames = 300 } = {}) {
+    this.mode = "full";
+    this.frameMs = TARGET_FRAME_MS;
+    this.workMs = 0;
+    this.pressure = 0;
+    this.recovery = 0;
+    this.enterPressure = enterPressure;
+    this.recoveryFrames = recoveryFrames;
+  }
+
+  sample(frameMs, workMs) {
+    if (!(frameMs > 0) || frameMs > 120 || !(workMs >= 0)) return null;
+    this.frameMs = blend(this.frameMs, frameMs, 0.06);
+    this.workMs = blend(this.workMs, workMs, 0.08);
+    const underPressure = this.frameMs > 21.5 || this.workMs > 7.5;
+
+    if (underPressure) {
+      this.pressure = Math.min(this.enterPressure, this.pressure + 1);
+      this.recovery = 0;
+    } else {
+      this.pressure = Math.max(0, this.pressure - 0.5);
+      if (this.mode === "lite" && this.frameMs < 18.5 && this.workMs < 5) this.recovery += 1;
+    }
+
+    if (this.mode === "full" && this.pressure >= this.enterPressure) {
+      this.mode = "lite";
+      this.pressure = 0;
+      return this.mode;
+    }
+    if (this.mode === "lite" && this.recovery >= this.recoveryFrames) {
+      this.mode = "full";
+      this.recovery = 0;
+      return this.mode;
+    }
+    return null;
+  }
+
+  snapshot() {
+    return {
+      mode: this.mode,
+      frameMs: this.frameMs,
+      workMs: this.workMs,
+      fps: Math.min(60, Math.round(1000 / Math.max(TARGET_FRAME_MS, this.frameMs)))
+    };
+  }
+}
+
+
 const TOY_RADIUS = 10;
 const TOY_GRAVITY = 1180;
 
@@ -826,6 +879,7 @@ const debugAbility = document.querySelector("#debug-ability");
 const debugPlatform = document.querySelector("#debug-platform");
 const debugPets = document.querySelector("#debug-pets");
 const debugJumps = document.querySelector("#debug-jumps");
+const debugPerformance = document.querySelector("#debug-performance");
 const driveList = document.querySelector("#drive-list");
 const debugButton = document.querySelector("#debug-button");
 const toyButton = document.querySelector("#toy-button");
@@ -964,8 +1018,6 @@ class LivingCat {
     this.specialCooldownUntil = 0;
     this.lastPetAt = 0;
     this.lastFrame = -1;
-    this.lastCatTransform = "";
-    this.lastCatClassName = "";
     this.lastReactionAt = 0;
     this.glitchFlashUntil = 0;
     this.abilityFlashUntil = 0;
@@ -982,8 +1034,10 @@ class LivingCat {
     this.lastStatusCopy = "";
     this.lastCatTransform = "";
     this.lastCatClassName = "";
+    this.lastToyTransform = "";
     this.lastBoxTransform = "";
     this.lastFishingTransforms = { handle: "", rod: "", line: "", lure: "" };
+    this.lastLaserPoint = "";
     this.nextDebugUpdateAt = 0;
     this.nextToyDatasetAt = 0;
     this.nextToyPlatformScanAt = 0;
@@ -997,6 +1051,8 @@ class LivingCat {
     this.vx = 0;
     this.target = null;
     this.lastFrame = -1;
+    this.lastCatTransform = "";
+    this.lastCatClassName = "";
     this.renderState = "idle";
     this.specialCooldownUntil = 0;
     this.abilityFlashUntil = 0;
@@ -1444,6 +1500,9 @@ class LivingCat {
 
   updateLaser() {
     if (!this.pointer.visible) return;
+    const point = `${this.pointer.x.toFixed(1)},${this.pointer.y.toFixed(1)}`;
+    if (point === this.lastLaserPoint) return;
+    this.lastLaserPoint = point;
     const transform = `translate3d(${this.pointer.x.toFixed(1)}px, ${this.pointer.y.toFixed(1)}px, 0) translate(-50%, -50%)`;
     if (laserToyElement.style.transform !== transform) laserToyElement.style.transform = transform;
     const surface = this.world.platformForTarget(this.pointer.x, this.pointer.y);
@@ -1629,8 +1688,11 @@ class LivingCat {
   renderToy() {
     if (!this.toy) return;
     const toy = this.toy;
-    toyElement.style.left = `${toy.x - toy.radius}px`;
-    toyElement.style.top = `${toy.y - toy.radius}px`;
+    const transform = `translate3d(${(toy.x - toy.radius).toFixed(1)}px, ${(toy.y - toy.radius).toFixed(1)}px, 0)`;
+    if (transform !== this.lastToyTransform) {
+      toyElement.style.transform = transform;
+      this.lastToyTransform = transform;
+    }
     toyElement.classList.toggle("toy--airborne", !toy.grounded);
     toyElement.classList.toggle("toy--held", this.drag?.kind === "toy");
     toyElement.style.setProperty("--toy-speed", String(Math.min(1, Math.abs(toy.vx) / 320)));
@@ -1971,6 +2033,7 @@ class LivingCat {
       this.pointer.x = x;
       this.pointer.y = y;
       this.pointer.visible = true;
+      this.lastLaserPoint = "";
       this.updateLaser();
     } else if (type === "feather") {
       const x = window.innerWidth * 0.58;
@@ -2030,8 +2093,8 @@ class LivingCat {
       platformId: platform.id,
       now
     });
-    toyElement.style.left = `${x - TOY_RADIUS}px`;
-    toyElement.style.top = `${y - TOY_RADIUS}px`;
+    this.lastToyTransform = "";
+    this.renderToy();
     toyElement.classList.add("is-visible");
     this.syncToyButtons();
     this.brain.noticeToy(now);
@@ -2100,6 +2163,7 @@ function setupRoster() {
 }
 
 function createHeart(x, y, glyph = "♥", variant = "") {
+  while (particleLayer.childElementCount >= 20) particleLayer.firstElementChild?.remove();
   const heart = document.createElement("span");
   heart.className = `heart ${variant}`.trim();
   heart.textContent = glyph;
@@ -2114,23 +2178,53 @@ setupDriveList();
 setupRoster();
 const world = new CatWorld(habitat);
 const cat = new LivingCat(world);
-habitat.dataset.features = "autonomy distinct-personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy drag-box fishing-rod inward-facing-rod cursor-toy-platform-targeting super-bounce low-latency-cursor-toys throw-ball expansion-roster special-abilities";
-window.catStudio = { cat, world, profiles: CAT_PROFILES, selectCat: (id) => cat.selectProfile(id) };
+const performanceGovernor = new PerformanceGovernor();
+habitat.dataset.features = "autonomy distinct-personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy drag-box fishing-rod inward-facing-rod cursor-toy-platform-targeting super-bounce low-latency-cursor-toys throw-ball expansion-roster special-abilities pointer-coalescing transform-only-motion performance-governor";
+habitat.dataset.performanceMode = performanceGovernor.mode;
+window.catStudio = { cat, world, profiles: CAT_PROFILES, performance: performanceGovernor, selectCat: (id) => cat.selectProfile(id) };
 let previousTime = performance.now();
 let pointerSample = { x: 0, y: 0, time: previousTime, initialized: false };
+let pendingPointer = null;
+let pendingDrag = null;
+let nextPerformanceReportAt = 0;
+
+function flushPointerInput() {
+  if (pendingDrag) {
+    cat.moveDrag(pendingDrag);
+    pendingDrag = null;
+  }
+  if (pendingPointer) {
+    const pointer = pendingPointer;
+    pendingPointer = null;
+    cat.updatePointer(pointer.x, pointer.y, pointer.speed, pointer.time);
+  }
+}
+
+function reportPerformance(now) {
+  if (now < nextPerformanceReportAt) return;
+  nextPerformanceReportAt = now + 500;
+  const snapshot = performanceGovernor.snapshot();
+  habitat.dataset.performanceMode = snapshot.mode;
+  habitat.dataset.performanceFps = String(snapshot.fps);
+  habitat.dataset.performanceFrameMs = snapshot.frameMs.toFixed(1);
+  habitat.dataset.performanceWorkMs = snapshot.workMs.toFixed(2);
+  if (debugPerformance) debugPerformance.textContent = `${snapshot.mode} · ${snapshot.fps} fps`;
+}
 
 function frame(now) {
-  const dt = Math.min(0.04, (now - previousTime) / 1000);
+  const frameMs = now - previousTime;
+  const dt = Math.min(0.04, frameMs / 1000);
   previousTime = now;
+  flushPointerInput();
+  const workStartedAt = performance.now();
   cat.update(dt, now);
+  const modeChange = performanceGovernor.sample(frameMs, performance.now() - workStartedAt);
+  if (modeChange) habitat.classList.toggle("performance-lite", modeChange === "lite");
+  reportPerformance(now);
   requestAnimationFrame(frame);
 }
 
 window.addEventListener("pointermove", (event) => {
-  if (cat.moveDrag(event)) {
-    event.preventDefault();
-    return;
-  }
   const samples = event.getCoalescedEvents?.();
   const latest = samples?.length ? samples[samples.length - 1] : event;
   const now = performance.now();
@@ -2139,7 +2233,12 @@ window.addEventListener("pointermove", (event) => {
     ? Math.hypot(latest.clientX - pointerSample.x, latest.clientY - pointerSample.y) / elapsed * 1000
     : 0;
   pointerSample = { x: latest.clientX, y: latest.clientY, time: now, initialized: true };
-  cat.updatePointer(latest.clientX, latest.clientY, speed, now);
+  if (cat.drag?.pointerId === event.pointerId) {
+    pendingDrag = { pointerId: event.pointerId, clientX: latest.clientX, clientY: latest.clientY };
+    event.preventDefault();
+    return;
+  }
+  pendingPointer = { x: latest.clientX, y: latest.clientY, speed, time: now };
 }, { passive: false });
 
 catElement.addEventListener("pointerdown", (event) => {
@@ -2168,11 +2267,21 @@ boxToyElement.addEventListener("pointerdown", (event) => {
   }
 });
 
-window.addEventListener("pointerup", (event) => cat.endDrag(event));
-window.addEventListener("pointercancel", (event) => cat.endDrag(event));
+window.addEventListener("pointerup", (event) => {
+  if (pendingDrag?.pointerId === event.pointerId) {
+    cat.moveDrag(pendingDrag);
+    pendingDrag = null;
+  }
+  cat.endDrag(event);
+});
+window.addEventListener("pointercancel", (event) => {
+  pendingDrag = null;
+  cat.endDrag(event);
+});
 
 window.addEventListener("resize", () => {
   world.scan();
+  cat.lastLaserPoint = "";
   const platform = world.get(cat.platformId) || world.get("floor");
   cat.x = Math.min(window.innerWidth - CAT_SIZE, Math.max(0, cat.x));
   if (cat.grounded && platform) cat.y = platform.top - CAT_SIZE + CAT_FOOT_OFFSET;
@@ -2186,6 +2295,9 @@ window.addEventListener("resize", () => {
 
 document.addEventListener("visibilitychange", () => {
   previousTime = performance.now();
+  pointerSample.time = previousTime;
+  pendingPointer = null;
+  pendingDrag = null;
 });
 
 toyButton.addEventListener("click", () => {

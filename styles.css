@@ -3,7 +3,7 @@
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --ink: #f4f0df;
   --muted: #8c929d;
-  --panel: rgba(20, 23, 29, 0.88);
+  --panel: rgba(20, 23, 29, 0.96);
   --line: rgba(244, 240, 223, 0.13);
   --green: #8ee09a;
   --amber: #f1bd78;
@@ -44,11 +44,7 @@ button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 }
 
 .ambient {
-  position: absolute;
-  border-radius: 999px;
-  filter: blur(80px);
-  opacity: .2;
-  pointer-events: none;
+  display: none;
 }
 .ambient--one { width: 360px; height: 360px; left: 10%; top: 4%; background: #62718c; }
 .ambient--two { width: 440px; height: 280px; right: 4%; bottom: 4%; background: #456351; }
@@ -63,7 +59,7 @@ button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
   border: 1px solid var(--line);
   background: var(--panel);
   box-shadow: 0 24px 80px rgba(0,0,0,.33), inset 0 1px rgba(255,255,255,.04);
-  backdrop-filter: blur(18px);
+  contain: layout paint;
 }
 
 .intro-panel {
@@ -300,6 +296,8 @@ h1 { margin: 0; max-width: 430px; font-size: clamp(30px, 3.2vw, 50px); line-heig
 .cat--sleep .sleep-mark { display: block; }
 
 .toy {
+  left: 0;
+  top: 0;
   position: absolute;
   z-index: 14;
   display: none;
@@ -312,6 +310,8 @@ h1 { margin: 0; max-width: 430px; font-size: clamp(30px, 3.2vw, 50px); line-heig
   cursor: grab;
   touch-action: none;
   user-select: none;
+  contain: layout paint;
+  will-change: transform;
 }
 .toy::before,
 .toy::after { content: none; }
@@ -422,8 +422,8 @@ h1 { margin: 0; max-width: 430px; font-size: clamp(30px, 3.2vw, 50px); line-heig
   padding: 7px;
   border: 1px solid rgba(255,255,255,.08);
   border-radius: 12px;
-  background: rgba(13,15,19,.78);
-  backdrop-filter: blur(16px);
+  background: rgba(13,15,19,.94);
+  contain: layout paint;
 }
 .controls button {
   border: 1px solid rgba(255,255,255,.09);
@@ -447,9 +447,9 @@ h1 { margin: 0; max-width: 430px; font-size: clamp(30px, 3.2vw, 50px); line-heig
   padding: 18px;
   border: 1px solid rgba(255,255,255,.12);
   border-radius: 16px;
-  background: rgba(10,13,17,.95);
+  background: rgba(10,13,17,.985);
   box-shadow: 0 28px 90px rgba(0,0,0,.58), inset 0 1px rgba(255,255,255,.05);
-  backdrop-filter: blur(22px);
+  contain: layout paint;
   max-height: calc(100vh - 140px);
   overflow-y: auto;
 }
@@ -515,9 +515,9 @@ h1 { margin: 0; max-width: 430px; font-size: clamp(30px, 3.2vw, 50px); line-heig
   padding: 16px;
   border: 1px solid rgba(255,255,255,.12);
   border-radius: 15px;
-  background: rgba(10,13,17,.96);
+  background: rgba(10,13,17,.985);
   box-shadow: 0 28px 80px rgba(0,0,0,.58), inset 0 1px rgba(255,255,255,.05);
-  backdrop-filter: blur(22px);
+  contain: layout paint;
 }
 .toy-tray header { margin-bottom: 12px; }
 .toy-tray header .eyebrow { margin-bottom: 4px; font-size: 9px; }
@@ -553,9 +553,9 @@ h1 { margin: 0; max-width: 430px; font-size: clamp(30px, 3.2vw, 50px); line-heig
   padding: 15px;
   border: 1px solid rgba(142,224,154,.18);
   border-radius: 12px;
-  background: rgba(9,12,14,.89);
+  background: rgba(9,12,14,.96);
   box-shadow: 0 18px 45px rgba(0,0,0,.36);
-  backdrop-filter: blur(16px);
+  contain: layout paint;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 .debug-panel header { display: flex; justify-content: space-between; margin-bottom: 14px; color: #737a84; font-size: 9px; letter-spacing: .1em; }
@@ -570,6 +570,19 @@ h1 { margin: 0; max-width: 430px; font-size: clamp(30px, 3.2vw, 50px); line-heig
 .debug-panel dl div { display: flex; justify-content: space-between; margin-top: 5px; font-size: 9px; }
 .debug-panel dt { color: #626973; }
 .debug-panel dd { margin: 0; color: #9da2aa; }
+
+.performance-lite .cat,
+.performance-lite .cat--held { filter: drop-shadow(0 8px 6px rgba(0,0,0,.4)); }
+.performance-lite .cat-art { transition: none; }
+.performance-lite .cat--glitching .cat-art,
+.performance-lite .cat--special-shy-dash .cat-art,
+.performance-lite .cat--special-toy-hoarder .cat-art,
+.performance-lite .cat--special-magnet-paws .cat-art,
+.performance-lite .cat--special-shadow-phase .cat-art { filter: none; }
+.performance-lite .cat--special-shadow-phase .cat-art { opacity: .55; }
+.performance-lite .cat--mood-spectrum::before { animation: none; box-shadow: none; opacity: .42; }
+.performance-lite .laser-toy { box-shadow: 0 0 5px #fff, 0 0 10px #ff2635; }
+.performance-lite .heart { text-shadow: none; }
 
 .paused::after {
   content: "PAUSED";

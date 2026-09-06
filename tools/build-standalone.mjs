@@ -4,6 +4,7 @@ const projectRoot = new URL("../", import.meta.url);
 const brainUrl = new URL("src/brain.mjs", projectRoot);
 const catsUrl = new URL("src/cats.mjs", projectRoot);
 const navigationUrl = new URL("src/navigation.mjs", projectRoot);
+const performanceUrl = new URL("src/performance.mjs", projectRoot);
 const toyPhysicsUrl = new URL("src/toy-physics.mjs", projectRoot);
 const toyInteractionsUrl = new URL("src/toy-interactions.mjs", projectRoot);
 const appUrl = new URL("src/app.mjs", projectRoot);
@@ -13,10 +14,11 @@ const idleFrameUrls = Array.from({ length: 8 }, (_, index) =>
   new URL(`assets/animations/idle-v1/frame-${String(index + 1).padStart(2, "0")}.png`, projectRoot)
 );
 
-const [brainSource, catsSource, navigationSource, toyPhysicsSource, toyInteractionsSource, appSource, catAtlasBuffer] = await Promise.all([
+const [brainSource, catsSource, navigationSource, performanceSource, toyPhysicsSource, toyInteractionsSource, appSource, catAtlasBuffer] = await Promise.all([
   readFile(brainUrl, "utf8"),
   readFile(catsUrl, "utf8"),
   readFile(navigationUrl, "utf8"),
+  readFile(performanceUrl, "utf8"),
   readFile(toyPhysicsUrl, "utf8"),
   readFile(toyInteractionsUrl, "utf8"),
   readFile(appUrl, "utf8"),
@@ -27,6 +29,7 @@ const idleFrameBuffers = await Promise.all(idleFrameUrls.map((url) => readFile(u
 const bundledBrain = brainSource.replace(/^export\s+/gm, "");
 const bundledCats = catsSource.replace(/^export\s+/gm, "");
 const bundledNavigation = navigationSource.replace(/^export\s+/gm, "");
+const bundledPerformance = performanceSource.replace(/^export\s+/gm, "");
 const bundledToyPhysics = toyPhysicsSource.replace(/^export\s+/gm, "");
 const bundledToyInteractions = toyInteractionsSource.replace(/^export\s+/gm, "");
 const bundledApp = appSource.replace(/^import\s+\{[\s\S]*?\}\s+from\s+["'][^"']+["'];\s*\n/gm, "");
@@ -36,7 +39,7 @@ const embeddedIdleFrames = idleFrameBuffers.map((buffer) =>
 );
 const embeddedFramesSource = `const EMBEDDED_IDLE_FRAMES = ${JSON.stringify(embeddedIdleFrames)};`;
 const embeddedAtlasSource = `const EMBEDDED_CAT_ATLAS = "data:image/png;base64,${catAtlasBuffer.toString("base64")}";`;
-const bundle = `${banner}(() => {\n  "use strict";\n\n${embeddedFramesSource}\n${embeddedAtlasSource}\n\n${bundledCats}\n\n${bundledBrain}\n\n${bundledNavigation}\n\n${bundledToyPhysics}\n\n${bundledToyInteractions}\n\n${bundledApp}\n})();\n`;
+const bundle = `${banner}(() => {\n  "use strict";\n\n${embeddedFramesSource}\n${embeddedAtlasSource}\n\n${bundledCats}\n\n${bundledBrain}\n\n${bundledNavigation}\n\n${bundledPerformance}\n\n${bundledToyPhysics}\n\n${bundledToyInteractions}\n\n${bundledApp}\n})();\n`;
 
 await mkdir(new URL("src/", projectRoot), { recursive: true });
 await writeFile(outputUrl, bundle, "utf8");

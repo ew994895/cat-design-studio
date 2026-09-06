@@ -37,6 +37,11 @@ After changing the source modules, regenerate the double-clickable build with `n
 - Direct manipulation: pick up and relocate the cat, or drag and toss the ball with release velocity preserved
 - Four working toy interactions: red ball, low-latency cursor laser, draggable cardboard sleep box, and a responsive fishing rod that flips inward at screen center with a springy feather lure
 - Cursor toys are rendered once per animation frame, and unchanged cat/debug DOM is no longer rewritten continuously
+- Pointer and drag events are coalesced so input-heavy toys never run the full simulation more than once per display frame
+- Ball, cat, box, laser, rod, line, and lure movement use compositor-friendly transforms instead of layout-changing motion
+- Expensive live backdrop blurs were removed from the animated habitat while preserving the dark glass-panel appearance
+- An automatic performance governor monitors frame time and JavaScript work, then temporarily reduces decorative effects on struggling hardware and restores them after sustained recovery
+- The brain panel reports the current quality mode and measured frame rate
 - Surface navigation graph with edge-fall detection and calculated jump arcs for climbing through every habitat tier and returning safely to the floor
 - Optional live brain panel showing needs, chosen action, surface, pets, and landings
 - Pause/resume control
