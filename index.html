@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0b0d10" />
     <title>Cat Design Studio — Living Widget Prototype</title>
-    <link rel="stylesheet" href="./styles.css?v=0.9" />
+    <link rel="stylesheet" href="./styles.css?v=1.0" />
   </head>
   <body>
     <main id="habitat" class="habitat" aria-label="A digital habitat for the widget cat">
@@ -129,13 +129,13 @@
       <nav class="controls" aria-label="Habitat controls">
         <button id="roster-button" type="button" aria-pressed="true">Choose cat</button>
         <button id="toy-menu-button" type="button" aria-pressed="false">Toys</button>
-        <button id="toy-button" type="button"><span aria-hidden="true">●</span> Drop ball</button>
+        <button id="toy-button" type="button" disabled><span aria-hidden="true">×</span> Put toy away</button>
         <button id="pet-button" type="button">Pet cat</button>
         <button id="debug-button" type="button" aria-pressed="false">Show brain</button>
         <button id="pause-button" type="button" aria-pressed="false">Pause</button>
       </nav>
     </main>
 
-    <script src="./src/app.bundle.js?v=1.6"></script>
+    <script src="./src/app.bundle.js?v=1.7"></script>
   </body>
 </html>

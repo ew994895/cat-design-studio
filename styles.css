@@ -388,7 +388,7 @@ h1 { margin: 0; max-width: 430px; font-size: clamp(30px, 3.2vw, 50px); line-heig
 .toy.is-visible { display: block; }
 .toy.toy--held { z-index: 55; cursor: grabbing; box-shadow: 0 0 0 4px rgba(227,52,63,.2), 0 0 18px rgba(227,52,63,.48), 0 12px 20px rgba(0,0,0,.45); }
 
-#toy-button span { color: #e3343f; }
+#toy-button span { color: currentColor; font-weight: 900; }
 
 .laser-toy,
 .box-toy,
@@ -505,6 +505,8 @@ h1 { margin: 0; max-width: 430px; font-size: clamp(30px, 3.2vw, 50px); line-heig
   cursor: pointer;
 }
 .controls button:hover { color: var(--ink); border-color: rgba(255,255,255,.18); }
+.controls button:disabled,
+.controls button:disabled:hover { color: #555c66; border-color: rgba(255,255,255,.06); cursor: not-allowed; opacity: .62; }
 .controls button[aria-pressed="true"] { color: var(--green); background: rgba(142,224,154,.07); }
 .controls button.is-active { color: var(--amber); border-color: rgba(241,189,120,.36); background: rgba(241,189,120,.09); }
 

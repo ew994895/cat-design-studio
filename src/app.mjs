@@ -1324,6 +1324,41 @@ class LivingCat {
     }
   }
 
+  syncPutAwayButton() {
+    toyButton.disabled = !this.toyType;
+    toyButton.classList.toggle("is-active", Boolean(this.toyType));
+  }
+
+  putToyAway(now = performance.now()) {
+    if (!this.toyType) return;
+    const toyName = this.toyType === "feather" ? "fishing rod" : this.toyType;
+    this.toy = null;
+    this.box = null;
+    this.fishingRig = null;
+    this.toyType = null;
+    this.toyTarget = null;
+    this.inBox = false;
+    toyElement.classList.remove("is-visible", "toy--airborne", "toy--held");
+    laserToyElement.hidden = true;
+    boxToyElement.hidden = true;
+    featherToyElement.hidden = true;
+    if (this.activeSpecial === "zero-gravity") {
+      this.activeSpecial = "";
+      this.abilityFlashUntil = now;
+    }
+    if (this.brain.currentAction === ACTIONS.PLAY) {
+      this.brain.setAction(ACTIONS.IDLE, now, 1100);
+      this.setRenderState(ACTIONS.IDLE);
+      this.nextDecisionAt = this.brain.actionUntil;
+      this.target = null;
+      this.vx *= 0.35;
+    }
+    this.syncToyButtons();
+    this.syncPutAwayButton();
+    statusCopy.textContent = `${this.profile.name} watched the ${toyName} get put away`;
+    this.lastStatusCopy = statusCopy.textContent;
+  }
+
   activateToy(type) {
     if (type === "ball") {
       this.dropToy();
@@ -1376,6 +1411,7 @@ class LivingCat {
     this.beginAction(ACTIONS.PLAY, now);
     this.nextDecisionAt = this.brain.actionUntil;
     this.syncToyButtons();
+    this.syncPutAwayButton();
     const toyName = type === "feather" ? "fishing rod" : type;
     statusCopy.textContent = `${this.profile.name} noticed the ${toyName}`;
     this.lastStatusCopy = statusCopy.textContent;
@@ -1424,17 +1460,11 @@ class LivingCat {
     this.renderToy();
     toyElement.classList.add("is-visible");
     this.syncToyButtons();
+    this.syncPutAwayButton();
     this.brain.noticeToy(now);
     this.brain.setAction(ACTIONS.PLAY, now, 5200);
     this.beginAction(ACTIONS.PLAY, now);
     this.nextDecisionAt = this.brain.actionUntil;
-    toyButton.classList.add("is-active");
-    toyButton.innerHTML = '<span aria-hidden="true">●</span> Toy dropped!';
-    clearTimeout(this.toyButtonTimer);
-    this.toyButtonTimer = setTimeout(() => {
-      toyButton.classList.remove("is-active");
-      toyButton.innerHTML = '<span aria-hidden="true">●</span> Drop ball';
-    }, 1000);
   }
 
   updateDebug(now = performance.now()) {
@@ -1506,7 +1536,7 @@ setupRoster();
 const world = new CatWorld(habitat);
 const cat = new LivingCat(world);
 const performanceGovernor = new PerformanceGovernor();
-habitat.dataset.features = "autonomy distinct-personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy drag-box fishing-rod inward-facing-rod cursor-toy-platform-targeting super-bounce low-latency-cursor-toys throw-ball expansion-roster super-roster special-abilities rhythm-burst time-bubble mirror-clone ground-pound zero-gravity sunbeam pointer-coalescing transform-only-motion performance-governor";
+habitat.dataset.features = "autonomy distinct-personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy drag-box fishing-rod inward-facing-rod cursor-toy-platform-targeting super-bounce low-latency-cursor-toys throw-ball toy-put-away expansion-roster super-roster special-abilities rhythm-burst time-bubble mirror-clone ground-pound zero-gravity sunbeam pointer-coalescing transform-only-motion performance-governor";
 habitat.dataset.performanceMode = performanceGovernor.mode;
 window.catStudio = { cat, world, profiles: CAT_PROFILES, performance: performanceGovernor, selectCat: (id) => cat.selectProfile(id) };
 let previousTime = performance.now();
@@ -1628,7 +1658,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 toyButton.addEventListener("click", () => {
-  cat.dropToy();
+  cat.putToyAway();
   toyTray.hidden = true;
   toyMenuButton.setAttribute("aria-pressed", "false");
 });
