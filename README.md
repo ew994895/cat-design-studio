@@ -52,6 +52,10 @@ After changing the source modules, regenerate the double-clickable build with `n
 - Optional live brain panel showing needs, chosen action, surface, pets, and landings
 - Pause/resume control
 
+## Test every cat
+
+Open [`CAT_TESTING_GUIDE.md`](CAT_TESTING_GUIDE.md) for the complete 37-cat handbook: personality, starting brain values, physical tuning, favorite toys, ability triggers, exact test steps, visible pass conditions, and known prototype boundaries.
+
 ## Verify the brain
 
 ```bash
