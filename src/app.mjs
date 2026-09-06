@@ -57,12 +57,14 @@ const fileIdleFrames = Array.from({ length: 8 }, (_, index) =>
 const idleFrames = typeof EMBEDDED_IDLE_FRAMES === "undefined"
   ? fileIdleFrames
   : EMBEDDED_IDLE_FRAMES;
-const catAtlasUrl = typeof EMBEDDED_CAT_ATLAS === "undefined"
+const starterCatAtlasUrl = typeof EMBEDDED_CAT_ATLAS === "undefined"
   ? "./assets/cats/starter-roster-v1.png"
   : EMBEDDED_CAT_ATLAS;
+const expansionCatAtlasUrl = "./assets/cats/expansion-roster-v1.png";
 idleFrames.forEach((src) => { const image = new Image(); image.src = src; });
 catSprite.src = idleFrames[0];
-habitat.style.setProperty("--cat-atlas", `url("${catAtlasUrl}")`);
+habitat.style.setProperty("--cat-atlas-starter", `url("${starterCatAtlasUrl}")`);
+habitat.style.setProperty("--cat-atlas-expansion", `url("${expansionCatAtlasUrl}")`);
 
 const actionCopy = {
   [ACTIONS.IDLE]: "listening to the room",
@@ -172,8 +174,14 @@ class LivingCat {
     this.specialCooldownUntil = 0;
     this.lastPetAt = 0;
     this.lastFrame = -1;
+    this.lastCatTransform = "";
+    this.lastCatClassName = "";
     this.lastReactionAt = 0;
     this.glitchFlashUntil = 0;
+    this.abilityFlashUntil = 0;
+    this.doubleJumpUsed = false;
+    this.nextAbilityTrailAt = 0;
+    this.activeSpecial = "";
     this.landingFlashUntil = 0;
     this.nextJumpAt = 0;
     this.paused = false;
@@ -200,15 +208,24 @@ class LivingCat {
     this.target = null;
     this.lastFrame = -1;
     this.renderState = "idle";
+    this.specialCooldownUntil = 0;
+    this.abilityFlashUntil = 0;
+    this.doubleJumpUsed = false;
+    this.activeSpecial = "";
     this.nextDecisionAt = now + 900;
     catElement.dataset.catId = this.profile.id;
     catElement.dataset.rarity = this.profile.rarity;
     catElement.dataset.ability = this.profile.movement.ability;
+    catElement.dataset.personality = this.profile.personality;
+    catElement.dataset.special = this.profile.special;
+    catElement.dataset.specialActive = "none";
     catElement.dataset.speed = String(this.profile.movement.speed);
     catElement.dataset.jump = String(this.profile.movement.jump);
     const article = /^[aeiou]/i.test(this.profile.rarity) ? "an" : "a";
     catElement.setAttribute("aria-label", `${this.profile.name}, ${article} ${this.profile.rarity} autonomous widget cat`);
     catElement.style.setProperty("--rarity-color", rarityColor[this.profile.rarity]);
+    catElement.style.setProperty("--profile-scale", String(this.profile.visualScale));
+    catPortrait.style.setProperty("--cat-atlas-image", `var(--cat-atlas-${this.profile.atlasSet})`);
     catPortrait.style.setProperty("--atlas-x", `${this.profile.atlas[0] * 50}%`);
     catPortrait.style.setProperty("--atlas-y", `${this.profile.atlas[1] * 50}%`);
     catSprite.hidden = this.profile.id !== DEFAULT_CAT_ID;
@@ -324,10 +341,26 @@ class LivingCat {
     createHeart(x, y, glyph, "reaction--anger");
   }
 
+  handlePetReaction(reaction, now, headX, headY) {
+    if (this.profile.movement.ability === "mood-spectrum") {
+      this.brain.drives.anger = Math.max(0, this.brain.drives.anger - 0.16);
+      this.activateSpecial("mood-spectrum", now, 720, "◆", "reaction--epic");
+      createHeart(headX + 12, headY - 4, "♥", "reaction--rare");
+    }
+    if (reaction === ACTIONS.PURR) createHeart(headX, headY - 10);
+    else this.showAngryReaction(reaction === ACTIONS.CLAW ? "///" : "HSS!", now);
+  }
+
   currentToyTarget() {
     if (this.toyType === "ball") return this.toy;
     if (["box", "laser", "feather"].includes(this.toyType)) return this.toyTarget;
     return null;
+  }
+
+  activateSpecial(name, now, duration = 420, glyph = "", variant = "") {
+    this.activeSpecial = name;
+    this.abilityFlashUntil = Math.max(this.abilityFlashUntil, now + duration);
+    if (glyph) createHeart(this.x + CAT_SIZE / 2, this.y + 8, glyph, variant);
   }
 
   updateBehavior(dt, now) {
@@ -343,6 +376,38 @@ class LivingCat {
       Math.random() < dt * 0.6
     ) {
       this.glitchStep(now);
+    }
+    if (
+      this.profile.movement.ability === "shadow-phase" &&
+      this.grounded &&
+      now >= this.specialCooldownUntil &&
+      [ACTIONS.ROAM, ACTIONS.PLAY, ACTIONS.INSPECT, ACTIONS.MISCHIEF].includes(action) &&
+      Math.random() < dt * 0.48
+    ) {
+      this.shadowStep(now);
+    }
+    if (
+      this.profile.movement.ability === "star-dash" &&
+      this.grounded &&
+      now < this.abilityFlashUntil &&
+      this.activeSpecial === "star-dash"
+    ) {
+      this.vx = this.facing * 282 * this.profile.movement.speed;
+      if (now >= this.nextAbilityTrailAt) {
+        createHeart(this.x + CAT_SIZE * (this.facing > 0 ? 0.18 : 0.82), this.y + CAT_SIZE * 0.62, "✦", "reaction--legendary");
+        this.nextAbilityTrailAt = now + 110;
+      }
+      return;
+    }
+    if (
+      this.profile.movement.ability === "star-dash" &&
+      this.grounded &&
+      now >= this.specialCooldownUntil &&
+      [ACTIONS.ROAM, ACTIONS.PLAY, ACTIONS.MISCHIEF].includes(action) &&
+      Math.random() < dt * 0.34
+    ) {
+      this.starDash(now);
+      return;
     }
 
     if (action === ACTIONS.ROAM && this.grounded && platform) {
@@ -420,6 +485,29 @@ class LivingCat {
     createHeart(this.x + CAT_SIZE / 2, this.y + 12, "⌁", "reaction--epic");
   }
 
+  shadowStep(now = performance.now()) {
+    const platform = this.world.get(this.platformId);
+    if (!platform) return;
+    const oldX = this.x;
+    const target = this.currentToyTarget() || this.target || this.pointer;
+    const targetDirection = target?.x ? Math.sign(target.x - (this.x + CAT_SIZE / 2)) : 0;
+    const direction = targetDirection || this.facing;
+    const distance = 74 + Math.random() * 72;
+    this.x = Math.min(platform.right - CAT_SIZE, Math.max(platform.left, this.x + direction * distance));
+    this.facing = Math.sign(this.x - oldX) || this.facing;
+    this.specialCooldownUntil = now + 2300 + Math.random() * 1300;
+    this.activateSpecial("shadow-phase", now, 560, "◐", "reaction--epic");
+  }
+
+  starDash(now = performance.now()) {
+    const target = this.currentToyTarget() || this.target;
+    if (target?.x) this.facing = Math.sign(target.x - (this.x + CAT_SIZE / 2)) || this.facing;
+    this.vx = this.facing * 282 * this.profile.movement.speed;
+    this.specialCooldownUntil = now + 3600 + Math.random() * 1700;
+    this.nextAbilityTrailAt = now;
+    this.activateSpecial("star-dash", now, 640, "★", "reaction--legendary");
+  }
+
   enterBox(now = performance.now()) {
     if (!this.toyTarget || !this.box || !this.box.grounded || this.inBox) return;
     const platform = this.world.get(this.box.platformId) || this.world.get("floor");
@@ -477,6 +565,7 @@ class LivingCat {
     this.facing = Math.sign(targetX - center) || this.facing;
     this.vx = Math.max(-430, Math.min(430, (targetX - center) / seconds));
     this.grounded = false;
+    this.doubleJumpUsed = false;
     this.platformId = null;
     this.departingPlatformId = dropping ? departureId : null;
     this.target = { x: targetX, y: target.top, platformId: target.id, kind: "platform" };
@@ -488,6 +577,7 @@ class LivingCat {
     this.vy = (-440 * power - 170) * jumpScale;
     this.vx = this.facing * (110 + power * 95) * this.profile.movement.speed;
     this.grounded = false;
+    this.doubleJumpUsed = false;
     this.platformId = null;
     this.departingPlatformId = null;
     this.nextJumpAt = now + 1200;
@@ -495,7 +585,27 @@ class LivingCat {
 
   updatePhysics(dt, now) {
     const previousBottom = this.y + CAT_SIZE - CAT_FOOT_OFFSET;
-    if (!this.grounded) this.vy += GRAVITY * dt;
+    const ability = this.profile.movement.ability;
+    if (
+      !this.grounded &&
+      ability === "double-jump" &&
+      !this.doubleJumpUsed &&
+      this.vy > 42 &&
+      this.target?.kind !== "platform" &&
+      [ACTIONS.JUMP, ACTIONS.PLAY, ACTIONS.MISCHIEF].includes(this.brain.currentAction)
+    ) {
+      this.vy = -250 * this.profile.movement.jump;
+      this.doubleJumpUsed = true;
+      this.activateSpecial("double-jump", now, 430, "Ⅱ", "reaction--rare");
+    }
+    if (!this.grounded) {
+      const gravityScale = ability === "feather-fall" && this.vy > 0 ? 0.34 : 1;
+      this.vy += GRAVITY * gravityScale * dt;
+      if (gravityScale < 1) {
+        this.activeSpecial = "feather-fall";
+        this.abilityFlashUntil = now + 160;
+      }
+    }
     this.x += this.vx * dt;
     this.y += this.vy * dt;
     if (this.grounded) {
@@ -518,6 +628,7 @@ class LivingCat {
         this.vy = 0;
         this.vx *= 0.62;
         this.grounded = true;
+        this.doubleJumpUsed = false;
         this.platformId = landing.id;
         this.departingPlatformId = null;
         this.brain.rememberLanding(landing.id);
@@ -535,6 +646,7 @@ class LivingCat {
       this.y = (floor?.top ?? window.innerHeight - 38) - CAT_SIZE + CAT_FOOT_OFFSET;
       this.vx = this.vy = 0;
       this.grounded = true;
+      this.doubleJumpUsed = false;
       this.platformId = "floor";
       this.departingPlatformId = null;
     }
@@ -663,6 +775,25 @@ class LivingCat {
       return;
     }
     const toy = this.toy;
+    if (this.profile.movement.ability === "magnet-paws" && this.brain.currentAction === ACTIONS.PLAY) {
+      const pawX = this.x + CAT_SIZE * (this.facing > 0 ? 0.72 : 0.28);
+      const pawY = this.y + CAT_SIZE * 0.72;
+      const dx = pawX - toy.x;
+      const dy = pawY - toy.y;
+      const distance = Math.hypot(dx, dy);
+      const sameSurface = toy.platformId && toy.platformId === this.platformId;
+      if (distance > 44 && distance < 280 && (sameSurface || !toy.grounded)) {
+        const pull = (1 - distance / 320) * 720;
+        toy.vx += dx / distance * pull * dt;
+        if (!toy.grounded) toy.vy += dy / distance * pull * 0.62 * dt;
+        this.activeSpecial = "magnet-paws";
+        this.abilityFlashUntil = now + 180;
+        if (now >= this.nextAbilityTrailAt) {
+          createHeart(toy.x, toy.y - 8, "⌁", "reaction--rare");
+          this.nextAbilityTrailAt = now + 420;
+        }
+      }
+    }
     const previousBottom = advanceToy(toy, dt, window.innerWidth);
     const nextBottom = toy.y + toy.radius;
 
@@ -734,12 +865,29 @@ class LivingCat {
 
   updateSprite(now) {
     const classes = ["cat", `cat--${this.renderState}`];
+    const ability = this.profile.movement.ability;
     if (this.drag?.kind === "cat") classes.push("cat--held");
     if (!this.grounded) classes.push("cat--airborne");
     if (now < this.landingFlashUntil) classes.push("cat--land");
     if (this.inBox) classes.push("cat--in-box");
-    if (this.profile.movement.ability === "turbo-sprint" && Math.abs(this.vx) > 120) classes.push("cat--sprinting");
+    if (ability === "tiny-scout") classes.push("cat--tiny-scout");
+    if (ability === "mood-spectrum") classes.push("cat--mood-spectrum");
+    if (ability === "feather-fall" && !this.grounded && this.vy > 0) classes.push("cat--feather-falling");
+    if (ability === "turbo-sprint" && Math.abs(this.vx) > 120) classes.push("cat--sprinting");
     if (now < this.glitchFlashUntil) classes.push("cat--glitching");
+    const specialActive = now < this.abilityFlashUntil ? this.activeSpecial : "none";
+    if (specialActive !== "none") classes.push(`cat--special-${specialActive}`);
+    if (catElement.dataset.specialActive !== specialActive) catElement.dataset.specialActive = specialActive;
+    const mood = this.brain.drives.anger >= 0.55 || [ACTIONS.HISS, ACTIONS.CLAW].includes(this.brain.currentAction)
+      ? "angry"
+      : [ACTIONS.SLEEP, ACTIONS.LOAF].includes(this.brain.currentAction)
+        ? "sleepy"
+        : [ACTIONS.PLAY, ACTIONS.MISCHIEF].includes(this.brain.currentAction)
+          ? "playful"
+          : [ACTIONS.PURR, ACTIONS.SEEK_AFFECTION].includes(this.brain.currentAction)
+            ? "affectionate"
+            : "curious";
+    if (catElement.dataset.mood !== mood) catElement.dataset.mood = mood;
     const className = classes.join(" ");
     if (className !== this.lastCatClassName) {
       catElement.className = className;
@@ -762,7 +910,7 @@ class LivingCat {
   }
 
   render() {
-    const transform = `translate3d(${this.x.toFixed(2)}px, ${this.y.toFixed(2)}px, 0)`;
+    const transform = `translate3d(${this.x.toFixed(2)}px, ${this.y.toFixed(2)}px, 0) scale(${this.profile.visualScale})`;
     if (transform !== this.lastCatTransform) {
       catElement.style.transform = transform;
       this.lastCatTransform = transform;
@@ -932,6 +1080,25 @@ class LivingCat {
     this.pointer.speed = speed;
     this.pointer.movedAt = now;
     this.pointer.visible = true;
+    const centerX = this.x + CAT_SIZE / 2;
+    const centerY = this.y + CAT_SIZE / 2;
+    const pointerDistance = Math.hypot(x - centerX, y - centerY);
+    if (
+      this.profile.movement.ability === "shy-dash" &&
+      this.grounded &&
+      !this.drag &&
+      speed > 820 &&
+      pointerDistance < 190 &&
+      now >= this.specialCooldownUntil
+    ) {
+      this.facing = x < centerX ? 1 : -1;
+      this.vx = this.facing * 176 * this.profile.movement.speed;
+      this.brain.drives.confidence = Math.max(0, this.brain.drives.confidence - 0.08);
+      this.brain.setAction(ACTIONS.INSPECT, now, 1100);
+      this.nextDecisionAt = this.brain.actionUntil;
+      this.specialCooldownUntil = now + 2100;
+      this.activateSpecial("shy-dash", now, 520, "!", "reaction--common");
+    }
     if (this.toyType === "laser") {
       if (!this.toyTarget) this.toyTarget = { x, y, kind: "laser" };
       else { this.toyTarget.x = x; this.toyTarget.y = y; }
@@ -950,8 +1117,7 @@ class LivingCat {
       this.setRenderState(reaction);
       this.nextDecisionAt = this.brain.actionUntil;
       this.vx *= 0.35;
-      if (reaction === ACTIONS.PURR) createHeart(headX, headY - 10);
-      else this.showAngryReaction(reaction === ACTIONS.CLAW ? "///" : "HSS!", now);
+      this.handlePetReaction(reaction, now, headX, headY);
     }
   }
 
@@ -961,7 +1127,13 @@ class LivingCat {
     const direction = Math.sign(this.toy.x - (this.x + CAT_SIZE / 2)) || this.facing;
     this.facing = direction;
     kickToy(this.toy, direction, (0.82 + Math.random() * 0.35) * this.profile.movement.toyForce, now);
-    createHeart(this.toy.x, this.toy.y - 5, "✦");
+    if (this.profile.movement.ability === "toy-hoarder") {
+      this.toy.vx *= 0.34;
+      this.toy.vy *= 0.42;
+      this.activateSpecial("toy-hoarder", now, 620, "MINE", "reaction--common");
+    } else {
+      createHeart(this.toy.x, this.toy.y - 5, "✦");
+    }
     this.brain.drives.playfulness = Math.max(0, this.brain.drives.playfulness - 0.035);
     this.brain.setAction(ACTIONS.PLAY, now, 3600);
     this.nextDecisionAt = this.brain.actionUntil;
@@ -1120,15 +1292,17 @@ function setupRoster() {
     button.dataset.catId = profile.id;
     button.setAttribute("aria-pressed", "false");
     button.setAttribute("aria-label", `Choose ${profile.name}, ${profile.rarity}: ${profile.tagline}`);
+    button.title = `${profile.tagline}. ${profile.special}`;
     button.innerHTML = `
       <span class="cat-option-art" aria-hidden="true"></span>
       <span class="cat-option-copy">
         <strong class="cat-option-name">${profile.name}</strong>
         <span class="cat-option-rarity">${profile.rarity}</span>
-        <span class="cat-option-tagline">${profile.tagline}</span>
+        <span class="cat-option-personality">${profile.personality}</span>
         <span class="cat-option-ability">${profile.movement.ability}</span>
       </span>`;
     const art = button.querySelector(".cat-option-art");
+    art.style.setProperty("--cat-atlas-image", `var(--cat-atlas-${profile.atlasSet})`);
     art.style.setProperty("--atlas-x", `${profile.atlas[0] * 50}%`);
     art.style.setProperty("--atlas-y", `${profile.atlas[1] * 50}%`);
     catGrid.append(button);
@@ -1150,7 +1324,7 @@ setupDriveList();
 setupRoster();
 const world = new CatWorld(habitat);
 const cat = new LivingCat(world);
-habitat.dataset.features = "autonomy personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy drag-box fishing-rod inward-facing-rod cursor-toy-platform-targeting super-bounce low-latency-cursor-toys throw-ball";
+habitat.dataset.features = "autonomy distinct-personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy drag-box fishing-rod inward-facing-rod cursor-toy-platform-targeting super-bounce low-latency-cursor-toys throw-ball expansion-roster special-abilities";
 window.catStudio = { cat, world, profiles: CAT_PROFILES, selectCat: (id) => cat.selectProfile(id) };
 let previousTime = performance.now();
 let pointerSample = { x: 0, y: 0, time: previousTime, initialized: false };
@@ -1267,8 +1441,7 @@ petButton.addEventListener("click", () => {
   const reaction = cat.brain.pet(1.2, now);
   cat.setRenderState(reaction);
   cat.nextDecisionAt = cat.brain.actionUntil;
-  if (reaction === ACTIONS.PURR) createHeart(cat.x + CAT_SIZE / 2, cat.y + 10);
-  else cat.showAngryReaction(reaction === ACTIONS.CLAW ? "///" : "HSS!", now);
+  cat.handlePetReaction(reaction, now, cat.x + CAT_SIZE / 2, cat.y + CAT_SIZE * 0.34);
 });
 debugButton.addEventListener("click", () => {
   debugPanel.hidden = !debugPanel.hidden;
@@ -1290,8 +1463,7 @@ catElement.addEventListener("click", () => {
   const reaction = cat.brain.pet(1.2, now);
   cat.setRenderState(reaction);
   cat.nextDecisionAt = cat.brain.actionUntil;
-  if (reaction === ACTIONS.PURR) createHeart(cat.x + CAT_SIZE / 2, cat.y + 10);
-  else cat.showAngryReaction(reaction === ACTIONS.CLAW ? "///" : "HSS!", now);
+  cat.handlePetReaction(reaction, now, cat.x + CAT_SIZE / 2, cat.y + CAT_SIZE * 0.34);
 });
 
 requestAnimationFrame(frame);

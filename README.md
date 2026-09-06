@@ -20,11 +20,13 @@ After changing the source modules, regenerate the double-clickable build with `n
 
 ## What is alive already
 
-- Eight selectable cats across common, rare, epic, and legendary tiers
+- Seventeen selectable cats across common, rare, epic, and legendary tiers
 - Six internal drives: energy, curiosity, affection, playfulness, confidence, and anger
 - Per-cat instinct weights, movement speed, jump power, toy force, temper, and favorite toys
 - Every cat can follow toys upward through reachable webpage tiers; Root alone has the current super-bounce range for skipping levels
-- Special behaviors including Marmalade's turbo sprint, Glitch's teleport, Root's mega jump, and Patches' deep sleep
+- A second nine-cat roster with genuinely different personalities: shy Mochi, possessive Biscuit, brave Dot, dreamy Nimbus, persistent Echo, obsessive Magnet, suspicious Vanta, expressive Prism, and impatient Nova
+- New working abilities: shy dash, toy hoarding, tiny scout scale, feather fall, double jump, magnetic paws, shadow phase, mood spectrum, and star dash
+- Existing special behaviors including Marmalade's turbo sprint, Glitch's teleport, Root's mega jump, and Patches' deep sleep
 - Utility-based autonomous behavior selection rather than a scripted loop
 - Idle breathing/blinking/tail motion using the canonical transparent frames
 - Independent roaming, direction changes, jumping, landing, and platform selection

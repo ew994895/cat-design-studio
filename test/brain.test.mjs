@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ACTIONS, CatBrain } from "../src/brain.mjs";
+import { CAT_PROFILES, getCatProfile } from "../src/cats.mjs";
 
 test("an exhausted cat chooses sleep in a quiet safe place", () => {
   const brain = new CatBrain({ random: () => 0 });
@@ -59,4 +60,26 @@ test("the brain remembers frequently visited platforms", () => {
   brain.rememberLanding("shelf");
   assert.equal(brain.memory.favoritePlatformId, "shelf");
   assert.equal(brain.memory.jumpsLanded, 2);
+});
+
+test("the expansion personalities make different choices in the same room", () => {
+  const context = {
+    quiet: true,
+    pointerVisible: false,
+    pointerNear: false,
+    pointerMoved: false,
+    toyAvailable: false,
+    onHighPlatform: false,
+    reachablePlatforms: 3,
+    canJump: true
+  };
+  const expansionCats = CAT_PROFILES.filter((cat) => cat.atlasSet === "expansion");
+  const scoreSignatures = expansionCats.map((cat) => {
+    const scores = new CatBrain({ profile: cat, random: () => 0 }).scoreActions(context);
+    return Object.values(scores).map((score) => score.toFixed(4)).join("|");
+  });
+  assert.equal(new Set(scoreSignatures).size, expansionCats.length);
+  assert.equal(new CatBrain({ profile: getCatProfile("mochi"), random: () => 0 }).decide(context, 10_000), ACTIONS.SLEEP);
+  assert.equal(new CatBrain({ profile: getCatProfile("dot"), random: () => 0 }).decide(context, 10_000), ACTIONS.ROAM);
+  assert.equal(new CatBrain({ profile: getCatProfile("echo"), random: () => 0 }).decide(context, 10_000), ACTIONS.JUMP);
 });
