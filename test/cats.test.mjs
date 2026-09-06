@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { CAT_PROFILES, DEFAULT_CAT_ID, getCatProfile } from "../src/cats.mjs";
 
 test("the expanded roster contains every rarity tier", () => {
-  assert.equal(CAT_PROFILES.length, 23);
+  assert.equal(CAT_PROFILES.length, 37);
   assert.deepEqual(
     [...new Set(CAT_PROFILES.map((cat) => cat.rarity))].sort(),
     ["common", "epic", "legendary", "rare"]
@@ -16,7 +16,7 @@ test("each cat has a unique identity and complete instinct profile", () => {
     assert.equal(typeof cat.tagline, "string");
     assert.equal(typeof cat.personality, "string");
     assert.equal(typeof cat.special, "string");
-    assert.ok(["starter", "expansion", "super"].includes(cat.atlasSet));
+    assert.ok(["starter", "expansion", "super", "iteration-four-a", "iteration-four-b"].includes(cat.atlasSet));
     assert.ok(cat.visualScale > 0 && cat.visualScale <= 1.2);
     assert.ok(cat.drives.anger >= 0 && cat.drives.anger <= 1);
     assert.ok(cat.instincts.sleep > 0);
@@ -32,6 +32,32 @@ test("each cat has a unique identity and complete instinct profile", () => {
   assert.equal(CAT_PROFILES.filter((cat) => cat.atlasSet === "starter").length, 8);
   assert.equal(CAT_PROFILES.filter((cat) => cat.atlasSet === "expansion").length, 9);
   assert.equal(CAT_PROFILES.filter((cat) => cat.atlasSet === "super").length, 6);
+  assert.equal(CAT_PROFILES.filter((cat) => cat.atlasSet === "iteration-four-a").length, 9);
+  assert.equal(CAT_PROFILES.filter((cat) => cat.atlasSet === "iteration-four-b").length, 5);
+});
+
+test("iteration four fills out the roster with fourteen new mechanics", () => {
+  const abilities = Object.fromEntries(
+    CAT_PROFILES
+      .filter((cat) => cat.atlasSet.startsWith("iteration-four"))
+      .map((cat) => [cat.id, cat.movement.ability])
+  );
+  assert.deepEqual(abilities, {
+    melly: "comfort-knead",
+    witty: "cursor-feint",
+    "pixel-purl": "twin-tag-team",
+    sable: "royal-yowl",
+    mistoffelees: "prestidigitation",
+    quickpaw: "speed-lap",
+    nocturne: "grapple-glide",
+    webpaw: "web-sling",
+    bastet: "guardian-ward",
+    "unsinkable-sam": "nine-lives",
+    trim: "navigator",
+    snowball: "extra-toes",
+    chonk: "immovable-loaf",
+    sphinx: "heat-seeker"
+  });
 });
 
 test("the super cats each introduce a different implemented mechanic", () => {

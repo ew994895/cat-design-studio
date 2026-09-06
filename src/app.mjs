@@ -65,11 +65,15 @@ const starterCatAtlasUrl = typeof EMBEDDED_CAT_ATLAS === "undefined"
   : EMBEDDED_CAT_ATLAS;
 const expansionCatAtlasUrl = "./assets/cats/expansion-roster-v1.png";
 const superCatAtlasUrl = "./assets/cats/super-roster-v1.png";
+const iterationFourAtlasAUrl = "./assets/cats/iteration-four-roster-a-v1.png";
+const iterationFourAtlasBUrl = "./assets/cats/iteration-four-roster-b-v1.png";
 idleFrames.forEach((src) => { const image = new Image(); image.src = src; });
 catSprite.src = idleFrames[0];
 habitat.style.setProperty("--cat-atlas-starter", `url("${starterCatAtlasUrl}")`);
 habitat.style.setProperty("--cat-atlas-expansion", `url("${expansionCatAtlasUrl}")`);
 habitat.style.setProperty("--cat-atlas-super", `url("${superCatAtlasUrl}")`);
+habitat.style.setProperty("--cat-atlas-iteration-four-a", `url("${iterationFourAtlasAUrl}")`);
+habitat.style.setProperty("--cat-atlas-iteration-four-b", `url("${iterationFourAtlasBUrl}")`);
 
 const actionCopy = {
   [ACTIONS.IDLE]: "listening to the room",
@@ -184,6 +188,9 @@ class LivingCat {
     this.abilityFlashUntil = 0;
     this.doubleJumpUsed = false;
     this.nextAbilityTrailAt = 0;
+    this.abilityPhaseUntil = 0;
+    this.abilityTargetX = null;
+    this.livesRemaining = 9;
     this.activeSpecial = "";
     this.landingFlashUntil = 0;
     this.nextJumpAt = 0;
@@ -218,6 +225,9 @@ class LivingCat {
     this.specialCooldownUntil = 0;
     this.abilityFlashUntil = 0;
     this.doubleJumpUsed = false;
+    this.abilityPhaseUntil = 0;
+    this.abilityTargetX = null;
+    this.livesRemaining = 9;
     this.activeSpecial = "";
     this.nextDecisionAt = now + 900;
     catElement.dataset.catId = this.profile.id;
@@ -370,6 +380,24 @@ class LivingCat {
         this.activateSpecial("sunbeam", now, 3200, "☀", "reaction--legendary");
       }
     }
+    if (this.profile.movement.ability === "comfort-knead") {
+      this.brain.drives.energy = Math.min(1, this.brain.drives.energy + 0.07);
+      this.brain.drives.affection = Math.min(1, this.brain.drives.affection + 0.06);
+      if (now >= this.specialCooldownUntil) {
+        this.specialCooldownUntil = now + 3600;
+        this.activateSpecial("comfort-knead", now, 1900, "♡", "reaction--rare");
+      }
+    }
+    if (this.profile.movement.ability === "guardian-ward" && this.brain.drives.anger > 0.18) {
+      this.brain.drives.anger = Math.max(0, this.brain.drives.anger - 0.32);
+      this.brain.setAction(ACTIONS.PURR, now, 1900);
+      this.nextDecisionAt = this.brain.actionUntil;
+      this.activateSpecial("guardian-ward", now, 1700, "☥", "reaction--legendary");
+    }
+    if (this.profile.movement.ability === "heat-seeker") {
+      this.brain.drives.energy = Math.min(1, this.brain.drives.energy + 0.08);
+      this.activateSpecial("heat-seeker", now, 1900, "♨", "reaction--rare");
+    }
     if (reaction === ACTIONS.PURR) createHeart(headX, headY - 10);
     else this.showAngryReaction(reaction === ACTIONS.CLAW ? "///" : "HSS!", now);
   }
@@ -392,6 +420,150 @@ class LivingCat {
     const ability = this.profile.movement.ability;
 
     if (this.inBox && (this.toyType !== "box" || action !== ACTIONS.SLEEP)) this.inBox = false;
+    if (ability === "comfort-knead" && this.activeSpecial === "comfort-knead" && now < this.abilityFlashUntil) {
+      this.brain.drives.energy = Math.min(1, this.brain.drives.energy + 0.034 * dt);
+      this.brain.drives.affection = Math.min(1, this.brain.drives.affection + 0.026 * dt);
+    }
+    if (
+      ability === "comfort-knead" &&
+      this.grounded &&
+      now >= this.specialCooldownUntil &&
+      [ACTIONS.SLEEP, ACTIONS.LOAF, ACTIONS.PURR].includes(action)
+    ) {
+      this.specialCooldownUntil = now + 5900;
+      this.activateSpecial("comfort-knead", now, 2300, "♡", "reaction--rare");
+    }
+    if (ability === "heat-seeker" && this.activeSpecial === "heat-seeker" && now < this.abilityFlashUntil) {
+      this.brain.drives.energy = Math.min(1, this.brain.drives.energy + 0.048 * dt);
+      this.brain.drives.anger = Math.max(0, this.brain.drives.anger - 0.08 * dt);
+    }
+    if (
+      ability === "heat-seeker" &&
+      this.grounded &&
+      now >= this.specialCooldownUntil &&
+      [ACTIONS.SLEEP, ACTIONS.LOAF, ACTIONS.PURR].includes(action)
+    ) {
+      this.specialCooldownUntil = now + 5200;
+      this.activateSpecial("heat-seeker", now, 3000, "♨", "reaction--rare");
+    }
+    if (
+      ability === "guardian-ward" &&
+      this.brain.drives.anger >= 0.3 &&
+      now >= this.specialCooldownUntil
+    ) {
+      this.brain.drives.anger = Math.max(0, this.brain.drives.anger - 0.38);
+      this.brain.drives.confidence = Math.min(1, this.brain.drives.confidence + 0.08);
+      this.brain.setAction(ACTIONS.LOAF, now, 1900);
+      this.setRenderState(ACTIONS.LOAF);
+      this.nextDecisionAt = this.brain.actionUntil;
+      this.vx = 0;
+      this.specialCooldownUntil = now + 4600;
+      this.activateSpecial("guardian-ward", now, 1900, "☥", "reaction--legendary");
+      return;
+    }
+    if (
+      ability === "immovable-loaf" &&
+      this.grounded &&
+      [ACTIONS.LOAF, ACTIONS.SLEEP].includes(action)
+    ) {
+      this.vx = 0;
+      this.brain.drives.anger = Math.max(0, this.brain.drives.anger - 0.2 * dt);
+      if (now >= this.specialCooldownUntil) {
+        this.specialCooldownUntil = now + 6200;
+        this.activateSpecial("immovable-loaf", now, 3600, "…", "reaction--common");
+      }
+      return;
+    }
+    if (
+      ability === "royal-yowl" &&
+      this.grounded &&
+      now >= this.specialCooldownUntil &&
+      (this.brain.drives.affection < 0.56 || now - this.pointer.movedAt > 7600) &&
+      Math.random() < dt * 0.24
+    ) {
+      this.brain.setAction(ACTIONS.SEEK_AFFECTION, now, 2100);
+      this.setRenderState(ACTIONS.INSPECT);
+      this.nextDecisionAt = this.brain.actionUntil;
+      this.vx = 0;
+      this.specialCooldownUntil = now + 6900;
+      this.activateSpecial("royal-yowl", now, 1800, "MRRROW", "reaction--common");
+      return;
+    }
+    if (
+      ability === "cursor-feint" &&
+      this.grounded &&
+      this.activeSpecial === "cursor-feint" &&
+      now < this.abilityFlashUntil
+    ) {
+      const targetX = Number.isFinite(this.abilityTargetX) ? this.abilityTargetX : this.pointer.x;
+      const direction = Math.sign(targetX - (this.x + CAT_SIZE / 2)) || this.facing;
+      this.facing = now < this.abilityPhaseUntil ? -direction : direction;
+      this.vx = this.facing * 168 * this.profile.movement.speed;
+      return;
+    }
+    if (
+      ability === "cursor-feint" &&
+      this.grounded &&
+      now >= this.specialCooldownUntil &&
+      [ACTIONS.PLAY, ACTIONS.INSPECT].includes(action)
+    ) {
+      const feintTarget = action === ACTIONS.PLAY ? this.currentToyTarget() : this.pointer;
+      const sameTier = !feintTarget?.platformId || feintTarget.platformId === this.platformId;
+      if (sameTier && Number.isFinite(feintTarget?.x) && Math.abs(feintTarget.x - (this.x + CAT_SIZE / 2)) > 68) {
+        this.abilityTargetX = feintTarget.x;
+        this.abilityPhaseUntil = now + 190;
+        this.specialCooldownUntil = now + 3200;
+        this.activateSpecial("cursor-feint", now, 620, "?↔", "reaction--epic");
+        this.facing = -Math.sign(feintTarget.x - (this.x + CAT_SIZE / 2)) || this.facing;
+        this.vx = this.facing * 168 * this.profile.movement.speed;
+        return;
+      }
+    }
+    if (
+      ability === "speed-lap" &&
+      this.grounded &&
+      platform &&
+      this.activeSpecial === "speed-lap" &&
+      now < this.abilityFlashUntil
+    ) {
+      const leftGap = this.x - platform.left;
+      const rightGap = platform.right - (this.x + CAT_SIZE);
+      if ((this.facing < 0 && leftGap < 12) || (this.facing > 0 && rightGap < 12)) this.facing *= -1;
+      this.vx = this.facing * 248 * this.profile.movement.speed;
+      if (now >= this.nextAbilityTrailAt) {
+        createHeart(this.x + CAT_SIZE * (this.facing > 0 ? 0.15 : 0.85), this.y + CAT_SIZE * 0.62, "ϟ", "reaction--legendary");
+        this.nextAbilityTrailAt = now + 150;
+      }
+      return;
+    }
+    if (
+      ability === "speed-lap" &&
+      this.grounded &&
+      platform &&
+      platform.width > 190 &&
+      now >= this.specialCooldownUntil &&
+      [ACTIONS.ROAM, ACTIONS.PLAY, ACTIONS.MISCHIEF].includes(action) &&
+      Math.random() < dt * 0.32
+    ) {
+      const target = action === ACTIONS.PLAY ? this.currentToyTarget() : null;
+      if (!target?.platformId || target.platformId === this.platformId) {
+        if (Number.isFinite(target?.x)) this.facing = Math.sign(target.x - (this.x + CAT_SIZE / 2)) || this.facing;
+        this.specialCooldownUntil = now + 5300;
+        this.nextAbilityTrailAt = now;
+        this.activateSpecial("speed-lap", now, 2100, "⚡", "reaction--legendary");
+        return;
+      }
+    }
+    if (
+      ability === "prestidigitation" &&
+      this.grounded &&
+      now >= this.specialCooldownUntil &&
+      action === ACTIONS.PLAY &&
+      ["ball", "box"].includes(this.toyType) &&
+      Math.random() < dt * 0.28
+    ) {
+      this.conjureToy(now);
+    }
     if (ability === "sunbeam" && this.activeSpecial === "sunbeam" && now < this.abilityFlashUntil) {
       this.brain.drives.energy = Math.min(1, this.brain.drives.energy + 0.042 * dt);
       this.brain.drives.anger = Math.max(0, this.brain.drives.anger - 0.16 * dt);
@@ -635,6 +807,46 @@ class LivingCat {
     this.toy.hitCount += 1;
   }
 
+  conjureToy(now = performance.now()) {
+    const current = this.world.get(this.platformId) || this.world.get("floor");
+    if (!current) return;
+    const center = this.x + CAT_SIZE / 2;
+    const reachable = this.world
+      .reachableFrom(current, center, this.profile.movement.navigationJump)
+      .filter((candidate) => candidate.width > 120);
+    const destinations = reachable.filter((candidate) => candidate.id !== this.platformId);
+    const destination = destinations[Math.floor(Math.random() * destinations.length)] || current;
+    const safeLeft = destination.left + 34;
+    const safeRight = destination.right - 34;
+    const x = Math.min(safeRight, Math.max(safeLeft, destination.left + destination.width * (0.3 + Math.random() * 0.4)));
+
+    if (this.toyType === "ball" && this.toy) {
+      createHeart(this.toy.x, this.toy.y - 8, "✦", "reaction--legendary");
+      this.toy.x = x;
+      this.toy.y = destination.top - this.toy.radius - 30;
+      this.toy.vx = (Math.random() - 0.5) * 54;
+      this.toy.vy = 24;
+      this.toy.grounded = false;
+      this.toy.platformId = null;
+      this.toy.lastKickedAt = now;
+      this.lastToyTransform = "";
+      this.renderToy();
+    } else if (this.toyType === "box" && this.box) {
+      createHeart(this.box.x + this.box.width / 2, this.box.y - 8, "✦", "reaction--legendary");
+      this.inBox = false;
+      this.box.x = Math.min(destination.right - this.box.width - 10, Math.max(destination.left + 10, x - this.box.width / 2));
+      this.box.y = destination.top - this.box.height - 24;
+      this.box.vx = 0;
+      this.box.vy = 20;
+      this.box.grounded = false;
+      this.box.platformId = null;
+      this.lastBoxTransform = "";
+      this.renderBox();
+    }
+    this.specialCooldownUntil = now + 6200;
+    this.activateSpecial("prestidigitation", now, 1700, "✦?", "reaction--legendary");
+  }
+
   enterBox(now = performance.now()) {
     if (!this.toyTarget || !this.box || !this.box.grounded || this.inBox) return;
     const platform = this.world.get(this.box.platformId) || this.world.get("floor");
@@ -657,10 +869,18 @@ class LivingCat {
     const center = this.x + CAT_SIZE / 2;
     const reachable = this.world.reachableFrom(current, center, this.profile.movement.navigationJump);
     if (!reachable.length) { this.jumpForward(0.52); return; }
-    const ranked = reachable.map((platform) => ({
-      platform,
-      score: (current.top - platform.top) * 0.7 - Math.abs((platform.left + platform.right) / 2 - center) * 0.2 + Math.random() * 90
-    })).sort((a, b) => b.score - a.score);
+    const ability = this.profile.movement.ability;
+    const ranked = reachable.map((platform) => {
+      const distance = Math.abs((platform.left + platform.right) / 2 - center);
+      const visits = this.brain.memory.platformVisits[platform.id] || 0;
+      const navigatorBonus = ability === "navigator" ? 320 / (visits + 1) + distance * 0.22 : 0;
+      const warmthBonus = ability === "heat-seeker" && platform.id === "editor" ? 360 : 0;
+      return {
+        platform,
+        score: (current.top - platform.top) * 0.7 - distance * 0.2 + navigatorBonus + warmthBonus + Math.random() * 90
+      };
+    }).sort((a, b) => b.score - a.score);
+    if (ability === "navigator") this.activateSpecial("navigator", performance.now(), 1100, "⌖", "reaction--rare");
     this.jumpToPlatform(ranked[0].platform, performance.now());
   }
 
@@ -697,6 +917,10 @@ class LivingCat {
     this.departingPlatformId = dropping ? departureId : null;
     this.target = { x: targetX, y: target.top, platformId: target.id, kind: "platform" };
     this.nextJumpAt = now + 1350;
+    if (this.profile.movement.ability === "grapple-glide" && now >= this.specialCooldownUntil) {
+      this.specialCooldownUntil = now + 1800;
+      this.activateSpecial("grapple-glide", now, 1100, "↗", "reaction--epic");
+    }
   }
 
   jumpForward(power = 0.55, now = performance.now()) {
@@ -735,6 +959,16 @@ class LivingCat {
       this.vy = -250 * this.profile.movement.jump;
       this.doubleJumpUsed = true;
       this.activateSpecial("double-jump", now, 430, "Ⅱ", "reaction--rare");
+    }
+    if (
+      !this.grounded &&
+      ability === "grapple-glide" &&
+      this.target?.kind === "platform" &&
+      Number.isFinite(this.target.x)
+    ) {
+      const horizontalError = this.target.x - (this.x + CAT_SIZE / 2);
+      this.vx += Math.max(-155, Math.min(155, horizontalError * 2.2)) * dt;
+      this.vx = Math.max(-430, Math.min(430, this.vx));
     }
     if (!this.grounded) {
       const gravityScale = ability === "feather-fall" && this.vy > 0
@@ -790,7 +1024,15 @@ class LivingCat {
       const floor = this.world.get("floor");
       this.x = Math.max(20, Math.min(window.innerWidth - CAT_SIZE - 20, this.x));
       this.y = (floor?.top ?? window.innerHeight - 38) - CAT_SIZE + CAT_FOOT_OFFSET;
-      this.vx = this.vy = 0;
+      if (ability === "nine-lives") {
+        this.livesRemaining = this.livesRemaining <= 1 ? 9 : this.livesRemaining - 1;
+        this.vx = Math.max(-180, Math.min(180, this.vx * 0.48));
+        this.vy = 0;
+        this.specialCooldownUntil = now + 1400;
+        this.activateSpecial("nine-lives", now, 1200, `♥×${this.livesRemaining}`, "reaction--rare");
+      } else {
+        this.vx = this.vy = 0;
+      }
       this.grounded = true;
       this.doubleJumpUsed = false;
       this.platformId = "floor";
@@ -941,6 +1183,26 @@ class LivingCat {
           createHeart(toy.x, toy.y - 8, "⌁", "reaction--rare");
           this.nextAbilityTrailAt = now + 420;
         }
+      }
+    }
+    if (
+      this.profile.movement.ability === "web-sling" &&
+      this.brain.currentAction === ACTIONS.PLAY &&
+      now >= this.specialCooldownUntil
+    ) {
+      const pawX = this.x + CAT_SIZE * (this.facing > 0 ? 0.72 : 0.28);
+      const pawY = this.y + CAT_SIZE * 0.7;
+      const dx = pawX - toy.x;
+      const dy = pawY - toy.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance > 82 && distance < 390) {
+        toy.vx += dx / distance * 380;
+        toy.vy += dy / distance * 230 - 90;
+        toy.grounded = false;
+        toy.platformId = null;
+        toy.lastKickedAt = now;
+        this.specialCooldownUntil = now + 3400;
+        this.activateSpecial("web-sling", now, 980, "⌁", "reaction--epic");
       }
     }
     const previousBottom = advanceToy(toy, dt, window.innerWidth);
@@ -1310,6 +1572,16 @@ class LivingCat {
       this.toy.vy -= 72;
       this.toy.hitCount += 1;
       this.activateSpecial("mirror-clone", now, 720, "Ⅱ", "reaction--epic");
+    } else if (this.profile.movement.ability === "twin-tag-team") {
+      this.toy.vx += direction * 148;
+      this.toy.vy -= 84;
+      this.toy.hitCount += 1;
+      this.activateSpecial("twin-tag-team", now, 760, "×2", "reaction--epic");
+    } else if (this.profile.movement.ability === "extra-toes") {
+      this.toy.vx *= 1.24;
+      this.toy.vy -= 64;
+      this.toy.hitCount += 1;
+      this.activateSpecial("extra-toes", now, 760, "×6", "reaction--rare");
     } else {
       createHeart(this.toy.x, this.toy.y - 5, "✦");
     }
@@ -1536,7 +1808,7 @@ setupRoster();
 const world = new CatWorld(habitat);
 const cat = new LivingCat(world);
 const performanceGovernor = new PerformanceGovernor();
-habitat.dataset.features = "autonomy distinct-personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy drag-box fishing-rod inward-facing-rod cursor-toy-platform-targeting super-bounce low-latency-cursor-toys throw-ball toy-put-away expansion-roster super-roster special-abilities rhythm-burst time-bubble mirror-clone ground-pound zero-gravity sunbeam pointer-coalescing transform-only-motion performance-governor";
+habitat.dataset.features = "autonomy distinct-personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy drag-box fishing-rod inward-facing-rod cursor-toy-platform-targeting super-bounce low-latency-cursor-toys throw-ball toy-put-away expansion-roster super-roster iteration-four-roster special-abilities rhythm-burst time-bubble mirror-clone ground-pound zero-gravity sunbeam comfort-knead cursor-feint twin-tag-team royal-yowl prestidigitation speed-lap grapple-glide web-sling guardian-ward nine-lives navigator extra-toes immovable-loaf heat-seeker pointer-coalescing transform-only-motion performance-governor";
 habitat.dataset.performanceMode = performanceGovernor.mode;
 window.catStudio = { cat, world, profiles: CAT_PROFILES, performance: performanceGovernor, selectCat: (id) => cat.selectProfile(id) };
 let previousTime = performance.now();
