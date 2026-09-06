@@ -18,6 +18,7 @@ const habitat = document.querySelector("#habitat");
 const catElement = document.querySelector("#cat");
 const catSprite = document.querySelector("#cat-sprite");
 const catPortrait = document.querySelector("#cat-portrait");
+const catClone = document.querySelector("#cat-clone");
 const clawMark = document.querySelector(".claw-mark");
 const toyElement = document.querySelector("#toy");
 const laserToyElement = document.querySelector("#laser-toy");
@@ -63,10 +64,12 @@ const starterCatAtlasUrl = typeof EMBEDDED_CAT_ATLAS === "undefined"
   ? "./assets/cats/starter-roster-v1.png"
   : EMBEDDED_CAT_ATLAS;
 const expansionCatAtlasUrl = "./assets/cats/expansion-roster-v1.png";
+const superCatAtlasUrl = "./assets/cats/super-roster-v1.png";
 idleFrames.forEach((src) => { const image = new Image(); image.src = src; });
 catSprite.src = idleFrames[0];
 habitat.style.setProperty("--cat-atlas-starter", `url("${starterCatAtlasUrl}")`);
 habitat.style.setProperty("--cat-atlas-expansion", `url("${expansionCatAtlasUrl}")`);
+habitat.style.setProperty("--cat-atlas-super", `url("${superCatAtlasUrl}")`);
 
 const actionCopy = {
   [ACTIONS.IDLE]: "listening to the room",
@@ -232,6 +235,9 @@ class LivingCat {
     catPortrait.style.setProperty("--cat-atlas-image", `var(--cat-atlas-${this.profile.atlasSet})`);
     catPortrait.style.setProperty("--atlas-x", `${this.profile.atlas[0] * 50}%`);
     catPortrait.style.setProperty("--atlas-y", `${this.profile.atlas[1] * 50}%`);
+    catClone.style.setProperty("--cat-atlas-image", `var(--cat-atlas-${this.profile.atlasSet})`);
+    catClone.style.setProperty("--atlas-x", `${this.profile.atlas[0] * 50}%`);
+    catClone.style.setProperty("--atlas-y", `${this.profile.atlas[1] * 50}%`);
     catSprite.hidden = this.profile.id !== DEFAULT_CAT_ID;
     catPortrait.hidden = this.profile.id === DEFAULT_CAT_ID;
     for (const button of catGrid.querySelectorAll("[data-cat-id]")) {
@@ -295,10 +301,15 @@ class LivingCat {
   }
 
   updateActiveToy(dt, now) {
-    if (this.toyType === "ball") this.updateToy(dt, now);
+    const timeBubbleActive =
+      this.profile.movement.ability === "time-bubble" &&
+      this.activeSpecial === "time-bubble" &&
+      now < this.abilityFlashUntil;
+    const toyDt = timeBubbleActive ? dt * 0.28 : dt;
+    if (this.toyType === "ball") this.updateToy(toyDt, now);
     else if (this.toyType === "laser") this.updateLaser();
     else if (this.toyType === "box") this.updateBox(dt);
-    else if (this.toyType === "feather") this.updateFishingRod(dt, now);
+    else if (this.toyType === "feather") this.updateFishingRod(toyDt, now);
   }
 
   beginAction(action, now) {
@@ -351,6 +362,14 @@ class LivingCat {
       this.activateSpecial("mood-spectrum", now, 720, "◆", "reaction--epic");
       createHeart(headX + 12, headY - 4, "♥", "reaction--rare");
     }
+    if (this.profile.movement.ability === "sunbeam") {
+      this.brain.drives.energy = Math.min(1, this.brain.drives.energy + 0.12);
+      this.brain.drives.anger = Math.max(0, this.brain.drives.anger - 0.22);
+      if (now >= this.specialCooldownUntil) {
+        this.specialCooldownUntil = now + 4200;
+        this.activateSpecial("sunbeam", now, 3200, "☀", "reaction--legendary");
+      }
+    }
     if (reaction === ACTIONS.PURR) createHeart(headX, headY - 10);
     else this.showAngryReaction(reaction === ACTIONS.CLAW ? "///" : "HSS!", now);
   }
@@ -370,10 +389,60 @@ class LivingCat {
   updateBehavior(dt, now) {
     const action = this.brain.currentAction;
     const platform = this.world.get(this.platformId);
+    const ability = this.profile.movement.ability;
 
     if (this.inBox && (this.toyType !== "box" || action !== ACTIONS.SLEEP)) this.inBox = false;
+    if (ability === "sunbeam" && this.activeSpecial === "sunbeam" && now < this.abilityFlashUntil) {
+      this.brain.drives.energy = Math.min(1, this.brain.drives.energy + 0.042 * dt);
+      this.brain.drives.anger = Math.max(0, this.brain.drives.anger - 0.16 * dt);
+    }
     if (
-      this.profile.movement.ability === "teleport" &&
+      ability === "sunbeam" &&
+      this.grounded &&
+      now >= this.specialCooldownUntil &&
+      [ACTIONS.SLEEP, ACTIONS.LOAF, ACTIONS.PURR].includes(action)
+    ) {
+      this.specialCooldownUntil = now + 5600;
+      this.activateSpecial("sunbeam", now, 3400, "☀", "reaction--legendary");
+    }
+    if (
+      ability === "zero-gravity" &&
+      this.activeSpecial === "zero-gravity" &&
+      now < this.abilityFlashUntil
+    ) {
+      this.orbitToy(now);
+      return;
+    }
+    if (
+      ability === "zero-gravity" &&
+      this.grounded &&
+      now >= this.specialCooldownUntil &&
+      action === ACTIONS.PLAY &&
+      ["laser", "feather"].includes(this.toyType) &&
+      this.currentToyTarget()
+    ) {
+      this.beginZeroGravity(now);
+      this.orbitToy(now);
+      return;
+    }
+    if (ability === "rhythm-burst" && this.grounded && [ACTIONS.ROAM, ACTIONS.PLAY, ACTIONS.MISCHIEF].includes(action)) {
+      const rhythmTarget = action === ACTIONS.PLAY ? this.currentToyTarget() : null;
+      const needsTierChange = rhythmTarget?.platformId && rhythmTarget.platformId !== this.platformId;
+      if (!needsTierChange) {
+        if (this.activeSpecial === "rhythm-burst" && now < this.abilityFlashUntil) {
+          this.vx = this.facing * 184 * this.profile.movement.speed;
+          return;
+        }
+        if (now >= this.specialCooldownUntil) {
+          this.rhythmBurst(now, rhythmTarget);
+          return;
+        }
+        this.vx *= Math.pow(0.78, dt * 60);
+        return;
+      }
+    }
+    if (
+      ability === "teleport" &&
       this.grounded &&
       now >= this.specialCooldownUntil &&
       [ACTIONS.PLAY, ACTIONS.MISCHIEF].includes(action) &&
@@ -382,7 +451,7 @@ class LivingCat {
       this.glitchStep(now);
     }
     if (
-      this.profile.movement.ability === "shadow-phase" &&
+      ability === "shadow-phase" &&
       this.grounded &&
       now >= this.specialCooldownUntil &&
       [ACTIONS.ROAM, ACTIONS.PLAY, ACTIONS.INSPECT, ACTIONS.MISCHIEF].includes(action) &&
@@ -391,7 +460,7 @@ class LivingCat {
       this.shadowStep(now);
     }
     if (
-      this.profile.movement.ability === "star-dash" &&
+      ability === "star-dash" &&
       this.grounded &&
       now < this.abilityFlashUntil &&
       this.activeSpecial === "star-dash"
@@ -404,7 +473,7 @@ class LivingCat {
       return;
     }
     if (
-      this.profile.movement.ability === "star-dash" &&
+      ability === "star-dash" &&
       this.grounded &&
       now >= this.specialCooldownUntil &&
       [ACTIONS.ROAM, ACTIONS.PLAY, ACTIONS.MISCHIEF].includes(action) &&
@@ -512,6 +581,60 @@ class LivingCat {
     this.activateSpecial("star-dash", now, 640, "★", "reaction--legendary");
   }
 
+  rhythmBurst(now = performance.now(), target = null) {
+    if (target?.x) this.facing = Math.sign(target.x - (this.x + CAT_SIZE / 2)) || this.facing;
+    this.vx = this.facing * 184 * this.profile.movement.speed;
+    this.specialCooldownUntil = now + 920;
+    this.activateSpecial("rhythm-burst", now, 320, "♪", "reaction--epic");
+  }
+
+  beginZeroGravity(now = performance.now()) {
+    this.grounded = false;
+    this.platformId = null;
+    this.departingPlatformId = null;
+    this.vx = 0;
+    this.vy = 0;
+    this.specialCooldownUntil = now + 6900;
+    this.nextAbilityTrailAt = now;
+    this.activateSpecial("zero-gravity", now, 2400, "◎", "reaction--legendary");
+  }
+
+  orbitToy(now = performance.now()) {
+    const target = this.currentToyTarget();
+    if (!target) return;
+    const angle = now / 390;
+    const desiredX = Math.min(
+      window.innerWidth - CAT_SIZE,
+      Math.max(0, target.x - CAT_SIZE / 2 + Math.cos(angle) * 82)
+    );
+    const desiredY = Math.min(
+      window.innerHeight - CAT_SIZE - 42,
+      Math.max(4, target.y - CAT_SIZE / 2 + Math.sin(angle * 1.16) * 54)
+    );
+    this.vx = Math.min(260, Math.max(-260, (desiredX - this.x) * 3.4));
+    this.vy = Math.min(220, Math.max(-220, (desiredY - this.y) * 3.4));
+    this.facing = Math.sign(this.vx) || this.facing;
+    if (now >= this.nextAbilityTrailAt) {
+      createHeart(this.x + CAT_SIZE / 2, this.y + CAT_SIZE / 2, "·", "reaction--legendary");
+      this.nextAbilityTrailAt = now + 210;
+    }
+  }
+
+  groundPound(now, surfaceTop, impactVelocity) {
+    this.activateSpecial("ground-pound", now, 620, "⬇", "reaction--legendary");
+    const centerX = this.x + CAT_SIZE / 2;
+    if (!this.toy) return;
+    const nearLanding = Math.abs(this.toy.x - centerX) < 280 && Math.abs(this.toy.y - surfaceTop) < 150;
+    if (!nearLanding) return;
+    const direction = Math.sign(this.toy.x - centerX) || this.facing;
+    this.toy.vx = direction * Math.min(520, 240 + impactVelocity * 0.3);
+    this.toy.vy = -Math.min(460, 210 + impactVelocity * 0.42);
+    this.toy.grounded = false;
+    this.toy.platformId = null;
+    this.toy.lastKickedAt = now;
+    this.toy.hitCount += 1;
+  }
+
   enterBox(now = performance.now()) {
     if (!this.toyTarget || !this.box || !this.box.grounded || this.inBox) return;
     const platform = this.world.get(this.box.platformId) || this.world.get("floor");
@@ -590,6 +713,17 @@ class LivingCat {
   updatePhysics(dt, now) {
     const previousBottom = this.y + CAT_SIZE - CAT_FOOT_OFFSET;
     const ability = this.profile.movement.ability;
+    const zeroGravityActive =
+      ability === "zero-gravity" &&
+      this.activeSpecial === "zero-gravity" &&
+      now < this.abilityFlashUntil;
+    if (zeroGravityActive) {
+      this.x = Math.min(window.innerWidth - CAT_SIZE, Math.max(0, this.x + this.vx * dt));
+      this.y = Math.min(window.innerHeight - CAT_SIZE - 38, Math.max(0, this.y + this.vy * dt));
+      this.grounded = false;
+      this.platformId = null;
+      return;
+    }
     if (
       !this.grounded &&
       ability === "double-jump" &&
@@ -603,7 +737,11 @@ class LivingCat {
       this.activateSpecial("double-jump", now, 430, "Ⅱ", "reaction--rare");
     }
     if (!this.grounded) {
-      const gravityScale = ability === "feather-fall" && this.vy > 0 ? 0.34 : 1;
+      const gravityScale = ability === "feather-fall" && this.vy > 0
+        ? 0.34
+        : ability === "ground-pound" && this.vy > 0
+          ? 1.48
+          : 1;
       this.vy += GRAVITY * gravityScale * dt;
       if (gravityScale < 1) {
         this.activeSpecial = "feather-fall";
@@ -628,6 +766,7 @@ class LivingCat {
     if (!this.grounded && this.vy >= 0) {
       const landing = this.world.landingCandidate(previousBottom, nextBottom, this.x + 14, this.x + CAT_SIZE - 14, 5, this.departingPlatformId);
       if (landing) {
+        const impactVelocity = this.vy;
         this.y = landing.top - CAT_SIZE + CAT_FOOT_OFFSET;
         this.vy = 0;
         this.vx *= 0.62;
@@ -639,6 +778,9 @@ class LivingCat {
         this.landingFlashUntil = now + 280;
         this.nextJumpAt = Math.max(this.nextJumpAt, now + 850);
         this.target = null;
+        if (ability === "ground-pound" && impactVelocity > 235) {
+          this.groundPound(now, landing.top, impactVelocity);
+        }
       }
     }
 
@@ -882,6 +1024,7 @@ class LivingCat {
     if (this.inBox) classes.push("cat--in-box");
     if (ability === "tiny-scout") classes.push("cat--tiny-scout");
     if (ability === "mood-spectrum") classes.push("cat--mood-spectrum");
+    if (ability === "mirror-clone") classes.push("cat--mirror-clone");
     if (ability === "feather-fall" && !this.grounded && this.vy > 0) classes.push("cat--feather-falling");
     if (ability === "turbo-sprint" && Math.abs(this.vx) > 120) classes.push("cat--sprinting");
     if (now < this.glitchFlashUntil) classes.push("cat--glitching");
@@ -1094,6 +1237,27 @@ class LivingCat {
     const centerY = this.y + CAT_SIZE / 2;
     const pointerDistance = Math.hypot(x - centerX, y - centerY);
     if (
+      this.profile.movement.ability === "time-bubble" &&
+      !this.drag &&
+      speed > 760 &&
+      pointerDistance < 240 &&
+      now >= this.specialCooldownUntil
+    ) {
+      if (this.toy) {
+        this.toy.vx *= 0.28;
+        this.toy.vy *= 0.28;
+      }
+      if (this.fishingRig) {
+        this.fishingRig.lureVx *= 0.22;
+        this.fishingRig.lureVy *= 0.22;
+      }
+      this.brain.drives.confidence = Math.max(0, this.brain.drives.confidence - 0.04);
+      this.brain.setAction(ACTIONS.INSPECT, now, 1250);
+      this.nextDecisionAt = this.brain.actionUntil;
+      this.specialCooldownUntil = now + 3300;
+      this.activateSpecial("time-bubble", now, 1200, "◷", "reaction--epic");
+    }
+    if (
       this.profile.movement.ability === "shy-dash" &&
       this.grounded &&
       !this.drag &&
@@ -1141,6 +1305,11 @@ class LivingCat {
       this.toy.vx *= 0.34;
       this.toy.vy *= 0.42;
       this.activateSpecial("toy-hoarder", now, 620, "MINE", "reaction--common");
+    } else if (this.profile.movement.ability === "mirror-clone") {
+      this.toy.vx += direction * 118;
+      this.toy.vy -= 72;
+      this.toy.hitCount += 1;
+      this.activateSpecial("mirror-clone", now, 720, "Ⅱ", "reaction--epic");
     } else {
       createHeart(this.toy.x, this.toy.y - 5, "✦");
     }
@@ -1337,7 +1506,7 @@ setupRoster();
 const world = new CatWorld(habitat);
 const cat = new LivingCat(world);
 const performanceGovernor = new PerformanceGovernor();
-habitat.dataset.features = "autonomy distinct-personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy drag-box fishing-rod inward-facing-rod cursor-toy-platform-targeting super-bounce low-latency-cursor-toys throw-ball expansion-roster special-abilities pointer-coalescing transform-only-motion performance-governor";
+habitat.dataset.features = "autonomy distinct-personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy drag-box fishing-rod inward-facing-rod cursor-toy-platform-targeting super-bounce low-latency-cursor-toys throw-ball expansion-roster super-roster special-abilities rhythm-burst time-bubble mirror-clone ground-pound zero-gravity sunbeam pointer-coalescing transform-only-motion performance-governor";
 habitat.dataset.performanceMode = performanceGovernor.mode;
 window.catStudio = { cat, world, profiles: CAT_PROFILES, performance: performanceGovernor, selectCat: (id) => cat.selectProfile(id) };
 let previousTime = performance.now();

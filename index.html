@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0b0d10" />
     <title>Cat Design Studio — Living Widget Prototype</title>
-    <link rel="stylesheet" href="./styles.css?v=0.8" />
+    <link rel="stylesheet" href="./styles.css?v=0.9" />
   </head>
   <body>
     <main id="habitat" class="habitat" aria-label="A digital habitat for the widget cat">
@@ -72,6 +72,7 @@
       <div id="particles" class="particles" aria-hidden="true"></div>
 
       <div id="cat" class="cat cat--idle" role="img" aria-label="Byte, a common autonomous widget cat" title="Drag to pick up and move">
+        <span id="cat-clone" class="cat-clone" aria-hidden="true"></span>
         <img id="cat-sprite" class="cat-art cat-sprite" src="./assets/animations/idle-v1/frame-01.png" alt="" draggable="false" />
         <span id="cat-portrait" class="cat-art cat-portrait" aria-hidden="true"></span>
         <span class="sleep-mark sleep-mark--one">z</span>
@@ -103,7 +104,7 @@
       <aside id="cat-roster" class="cat-roster" aria-label="Choose a cat">
         <header class="roster-header">
           <div>
-            <span class="eyebrow">CAT COLLECTOR / 17 RESIDENTS</span>
+            <span class="eyebrow">CAT COLLECTOR / 23 RESIDENTS</span>
             <h2>Choose your resident</h2>
           </div>
           <button id="roster-close" type="button" aria-label="Close cat roster">×</button>
@@ -135,6 +136,6 @@
       </nav>
     </main>
 
-    <script src="./src/app.bundle.js?v=1.5"></script>
+    <script src="./src/app.bundle.js?v=1.6"></script>
   </body>
 </html>
