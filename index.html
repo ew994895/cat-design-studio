@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0b0d10" />
     <title>Cat Design Studio — Living Widget Prototype</title>
-    <link rel="stylesheet" href="./styles.css?v=1.1" />
+    <link rel="stylesheet" href="./styles.css?v=1.2" />
   </head>
   <body>
     <main id="habitat" class="habitat" aria-label="A digital habitat for the widget cat">
@@ -69,6 +69,20 @@
         <span class="fishing-line"></span>
         <span class="feather-lure"><span class="feather-plume">◆</span><span class="feather-tail">〰</span></span>
       </div>
+      <div id="mouse-toy" class="mouse-toy" role="img" aria-label="A draggable wind-up mouse that scurries away" title="Drag to move or toss" hidden>
+        <span class="mouse-ear"></span><span class="mouse-eye"></span><span class="mouse-key">⌁</span><span class="mouse-tail"></span>
+      </div>
+      <div id="bubble-toy" class="bubble-toy" role="img" aria-label="A draggable bubble machine with poppable bubbles" hidden>
+        <span id="bubble-machine" class="bubble-machine" title="Drag the machine or tap the habitat to blow a bubble"><span>○</span></span>
+        <span class="bubble" data-bubble-slot="0"></span><span class="bubble" data-bubble-slot="1"></span>
+        <span class="bubble" data-bubble-slot="2"></span><span class="bubble" data-bubble-slot="3"></span>
+        <span class="bubble" data-bubble-slot="4"></span><span class="bubble" data-bubble-slot="5"></span>
+        <span class="bubble" data-bubble-slot="6"></span>
+      </div>
+      <div id="tunnel-toy" class="tunnel-toy" role="img" aria-label="A draggable play tunnel the cat can dash through" title="Drag to move or toss" hidden>
+        <span class="tunnel-rib tunnel-rib--one"></span><span class="tunnel-rib tunnel-rib--two"></span><span class="tunnel-rib tunnel-rib--three"></span>
+        <span class="tunnel-mouth"></span>
+      </div>
       <div id="particles" class="particles" aria-hidden="true"></div>
 
       <div id="cat" class="cat cat--idle" role="img" aria-label="Byte, a common autonomous widget cat" title="Drag to pick up and move">
@@ -122,9 +136,14 @@
           <button type="button" data-toy-type="ball" aria-pressed="false"><span class="toy-icon toy-icon--ball">●</span><strong>Red ball</strong><small>bounce · roll · bat</small></button>
           <button type="button" data-toy-type="laser" aria-pressed="false"><span class="toy-icon toy-icon--laser">•</span><strong>Laser</strong><small>aim · stalk · sprint</small></button>
           <button type="button" data-toy-type="box" aria-pressed="false"><span class="toy-icon toy-icon--box">□</span><strong>Box</strong><small>drag · hide · sleep</small></button>
-          <button type="button" data-toy-type="feather" aria-pressed="false"><span class="toy-icon toy-icon--feather">◆</span><strong>Fishing rod</strong><small>aim · whip · pounce</small></button>
+          <button type="button" data-toy-type="feather" aria-pressed="false"><span class="toy-icon toy-icon--feather">◆</span><strong>Fishing rod</strong><small>hold to reel · release to cast</small></button>
+          <button type="button" data-toy-type="mouse" aria-pressed="false"><span class="toy-icon toy-icon--mouse">⌁</span><strong>Wind-up mouse</strong><small>scurry · escape · pounce</small></button>
+          <button type="button" data-toy-type="bubbles" aria-pressed="false"><span class="toy-icon toy-icon--bubbles">○</span><strong>Bubbles</strong><small>tap · float · pop</small></button>
+          <button type="button" data-toy-type="tunnel" aria-pressed="false"><span class="toy-icon toy-icon--tunnel">◉</span><strong>Play tunnel</strong><small>drag · dive · zoom</small></button>
         </div>
       </aside>
+
+      <div id="toy-hint" class="toy-hint" aria-live="polite" hidden></div>
 
       <nav class="controls" aria-label="Habitat controls">
         <button id="roster-button" type="button" aria-pressed="true">Choose cat</button>
@@ -136,6 +155,6 @@
       </nav>
     </main>
 
-    <script src="./src/app.bundle.js?v=1.8"></script>
+    <script src="./src/app.bundle.js?v=1.9"></script>
   </body>
 </html>

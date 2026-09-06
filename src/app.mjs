@@ -4,13 +4,22 @@ import { canTraverse, launchPoint, nextHopToward, platformForTarget, reachablePl
 import { PerformanceGovernor } from "./performance.mjs";
 import { advanceToy, bounceToy, createToy, isToyOnSurface, kickToy, TOY_RADIUS } from "./toy-physics.mjs";
 import {
+  advanceBubble,
   advanceBox,
   advanceFishingRig,
+  advanceMouse,
+  createBubble,
   createBox,
   createFishingRig,
+  createMouse,
   isBoxOnSurface,
+  isMouseOnSurface,
+  pounceMouse,
   segmentGeometry,
   setFishingHandle,
+  setFishingReel,
+  settleMouse,
+  strikeFishingLure,
   settleBox
 } from "./toy-interactions.mjs";
 
@@ -28,6 +37,11 @@ const fishingHandleElement = featherToyElement.querySelector(".fishing-handle");
 const fishingRodElement = featherToyElement.querySelector(".fishing-rod");
 const fishingLineElement = featherToyElement.querySelector(".fishing-line");
 const featherLureElement = featherToyElement.querySelector(".feather-lure");
+const mouseToyElement = document.querySelector("#mouse-toy");
+const bubbleToyElement = document.querySelector("#bubble-toy");
+const bubbleMachineElement = document.querySelector("#bubble-machine");
+const bubbleElements = [...bubbleToyElement.querySelectorAll("[data-bubble-slot]")];
+const tunnelToyElement = document.querySelector("#tunnel-toy");
 const particleLayer = document.querySelector("#particles");
 const statusCopy = document.querySelector("#status-copy");
 const debugPanel = document.querySelector("#debug-panel");
@@ -50,6 +64,7 @@ const rosterButton = document.querySelector("#roster-button");
 const rosterClose = document.querySelector("#roster-close");
 const catGrid = document.querySelector("#cat-grid");
 const toyTray = document.querySelector("#toy-tray");
+const toyHint = document.querySelector("#toy-hint");
 
 const CAT_SIZE = 84;
 const CAT_FOOT_OFFSET = 3;
@@ -179,6 +194,17 @@ class LivingCat {
     this.toyTarget = null;
     this.box = null;
     this.fishingRig = null;
+    this.mouse = null;
+    this.bubbleMachine = null;
+    this.bubbles = [];
+    this.bubblePopCount = 0;
+    this.nextBubbleAt = 0;
+    this.bubbleSeed = 0;
+    this.tunnel = null;
+    this.tunnelUses = 0;
+    this.inTunnel = false;
+    this.tunnelExitAt = 0;
+    this.tunnelCooldownUntil = 0;
     this.inBox = false;
     this.specialCooldownUntil = 0;
     this.lastPetAt = 0;
@@ -205,6 +231,9 @@ class LivingCat {
     this.lastToyTransform = "";
     this.lastBoxTransform = "";
     this.lastFishingTransforms = { handle: "", rod: "", line: "", lure: "" };
+    this.lastMouseTransform = "";
+    this.lastBubbleMachineTransform = "";
+    this.lastTunnelTransform = "";
     this.lastLaserPoint = "";
     this.nextDebugUpdateAt = 0;
     this.nextToyDatasetAt = 0;
@@ -320,6 +349,9 @@ class LivingCat {
     else if (this.toyType === "laser") this.updateLaser();
     else if (this.toyType === "box") this.updateBox(dt);
     else if (this.toyType === "feather") this.updateFishingRod(toyDt, now);
+    else if (this.toyType === "mouse") this.updateMouse(dt, now);
+    else if (this.toyType === "bubbles") this.updateBubbles(dt, now);
+    else if (this.toyType === "tunnel") this.updateTunnel(dt, now);
   }
 
   beginAction(action, now) {
@@ -404,7 +436,7 @@ class LivingCat {
 
   currentToyTarget() {
     if (this.toyType === "ball") return this.toy;
-    if (["box", "laser", "feather"].includes(this.toyType)) return this.toyTarget;
+    if (["box", "laser", "feather", "mouse", "bubbles", "tunnel"].includes(this.toyType)) return this.toyTarget;
     return null;
   }
 
@@ -418,6 +450,13 @@ class LivingCat {
     const action = this.brain.currentAction;
     const platform = this.world.get(this.platformId);
     const ability = this.profile.movement.ability;
+
+    if (this.inTunnel) {
+      if (now >= this.tunnelExitAt) this.exitTunnel(now);
+      return;
+    }
+    if (action === ACTIONS.PLAY && this.toyType === "feather") this.strikeFishingLure(now);
+    if (action === ACTIONS.PLAY && this.toyType === "bubbles") this.popNearestBubble(now);
 
     if (this.inBox && (this.toyType !== "box" || action !== ACTIONS.SLEEP)) this.inBox = false;
     if (ability === "comfort-knead" && this.activeSpecial === "comfort-knead" && now < this.abilityFlashUntil) {
@@ -697,7 +736,7 @@ class LivingCat {
           this.vx = this.facing * (action === ACTIONS.PLAY ? playSpeed : 46);
         } else {
           this.vx *= 0.78;
-          const isAirToy = this.toyType === "laser" || this.toyType === "feather";
+          const isAirToy = this.toyType === "laser" || this.toyType === "feather" || this.toyType === "bubbles";
           if (action === ACTIONS.PLAY && now >= this.nextJumpAt && Math.abs(target.y - (this.y + CAT_SIZE - CAT_FOOT_OFFSET)) > 42 && Math.random() < dt * (isAirToy ? 2.4 : 1.2)) {
             this.jumpForward(0.54, now);
           }
@@ -706,6 +745,12 @@ class LivingCat {
           }
           if (action === ACTIONS.PLAY && this.toyType === "box" && target.platformId === this.platformId && Math.hypot(delta, target.y - this.y) < 88) {
             this.enterBox(now);
+          }
+          if (action === ACTIONS.PLAY && this.toyType === "mouse" && this.mouse && this.mouse.platformId === this.platformId && Math.hypot(delta, target.y - this.y) < 82) {
+            this.pounceMouse(now);
+          }
+          if (action === ACTIONS.PLAY && this.toyType === "tunnel" && this.tunnel && target.platformId === this.platformId && Math.hypot(delta, target.y - this.y) < 94) {
+            this.enterTunnel(now);
           }
         }
       }
@@ -935,6 +980,7 @@ class LivingCat {
   }
 
   updatePhysics(dt, now) {
+    if (this.inTunnel) return;
     const previousBottom = this.y + CAT_SIZE - CAT_FOOT_OFFSET;
     const ability = this.profile.movement.ability;
     const zeroGravityActive =
@@ -1121,8 +1167,8 @@ class LivingCat {
     this.toyTarget.x = this.fishingRig.lureX;
     this.toyTarget.y = this.fishingRig.lureY;
     if (now >= this.nextToyPlatformScanAt) {
-      const surface = this.world.platformForTarget(this.fishingRig.handleX, this.fishingRig.handleY)
-        || this.world.platformForTarget(this.fishingRig.lureX, this.fishingRig.lureY, 170);
+      const surface = this.world.platformForTarget(this.fishingRig.lureX, this.fishingRig.lureY, 170)
+        || this.world.platformForTarget(this.fishingRig.handleX, this.fishingRig.handleY);
       this.toyTarget.platformId = surface?.id || null;
       const platform = this.toyTarget.platformId || "airborne";
       if (featherToyElement.dataset.platform !== platform) featherToyElement.dataset.platform = platform;
@@ -1155,8 +1201,286 @@ class LivingCat {
       featherToyElement.dataset.lureY = rig.lureY.toFixed(1);
       featherToyElement.dataset.lineLength = line.length.toFixed(1);
       featherToyElement.dataset.direction = rig.direction > 0 ? "right" : "left";
+      featherToyElement.dataset.reeling = String(rig.reeling);
+      featherToyElement.dataset.hits = String(rig.hitCount);
       this.nextToyDatasetAt = now + 120;
     }
+  }
+
+  strikeFishingLure(now = performance.now()) {
+    if (!this.fishingRig) return;
+    const pawX = this.x + CAT_SIZE * (this.facing > 0 ? 0.72 : 0.28);
+    const pawY = this.y + CAT_SIZE * 0.58;
+    if (Math.hypot(this.fishingRig.lureX - pawX, this.fishingRig.lureY - pawY) > 62) return;
+    const direction = Math.sign(this.fishingRig.lureX - (this.x + CAT_SIZE / 2)) || this.facing;
+    if (!strikeFishingLure(this.fishingRig, direction, this.profile.movement.toyForce, now)) return;
+    this.facing = direction;
+    this.brain.drives.playfulness = Math.max(0, this.brain.drives.playfulness - 0.045);
+    this.brain.setAction(ACTIONS.PLAY, now, 3200);
+    this.nextDecisionAt = this.brain.actionUntil;
+    createHeart(this.fishingRig.lureX, this.fishingRig.lureY - 8, "SNAP!", "reaction--rare");
+  }
+
+  updateMouse(dt, now) {
+    if (!this.mouse) return;
+    if (this.drag?.kind === "mouse") {
+      this.renderMouse();
+      return;
+    }
+
+    const mouse = this.mouse;
+    const support = mouse.grounded ? this.world.get(mouse.platformId) : null;
+    const previousBottom = advanceMouse(mouse, dt, window.innerWidth, now, support);
+    if (mouse.grounded) {
+      if (!isMouseOnSurface(mouse, support)) {
+        mouse.grounded = false;
+        mouse.platformId = null;
+      }
+    } else if (mouse.vy >= 0) {
+      const landing = this.world.landingCandidate(
+        previousBottom,
+        mouse.y + mouse.height,
+        mouse.x + 5,
+        mouse.x + mouse.width - 5,
+        5
+      );
+      if (landing) settleMouse(mouse, landing.top, landing.id);
+    }
+
+    if (mouse.y > window.innerHeight + 40) {
+      const floor = this.world.get("floor");
+      mouse.x = Math.min(window.innerWidth - mouse.width - 12, Math.max(12, mouse.x));
+      settleMouse(mouse, floor?.top ?? window.innerHeight - 38, "floor");
+    }
+
+    if (!this.toyTarget) this.toyTarget = { x: 0, y: 0, platformId: null, kind: "mouse" };
+    this.toyTarget.x = mouse.x + mouse.width / 2;
+    this.toyTarget.y = mouse.y + mouse.height;
+    this.toyTarget.platformId = mouse.platformId;
+    this.renderMouse();
+  }
+
+  renderMouse() {
+    if (!this.mouse) return;
+    const mouse = this.mouse;
+    const transform = `translate3d(${mouse.x.toFixed(1)}px, ${mouse.y.toFixed(1)}px, 0) scaleX(${mouse.direction})`;
+    if (transform !== this.lastMouseTransform) {
+      mouseToyElement.style.transform = transform;
+      this.lastMouseTransform = transform;
+    }
+    mouseToyElement.classList.toggle("mouse-toy--held", this.drag?.kind === "mouse");
+    mouseToyElement.dataset.direction = mouse.direction > 0 ? "right" : "left";
+    mouseToyElement.dataset.scurry = String(mouse.grounded && Math.abs(mouse.vx) > 55);
+    mouseToyElement.dataset.platform = mouse.platformId || "airborne";
+    mouseToyElement.dataset.pounces = String(mouse.pounceCount);
+  }
+
+  pounceMouse(now = performance.now()) {
+    if (!this.mouse) return;
+    const catCenter = this.x + CAT_SIZE / 2;
+    const mouseCenter = this.mouse.x + this.mouse.width / 2;
+    const escapeDirection = Math.sign(mouseCenter - catCenter) || -this.facing;
+    if (!pounceMouse(this.mouse, escapeDirection, this.profile.movement.toyForce, now)) return;
+    this.facing = escapeDirection;
+    this.brain.drives.playfulness = Math.max(0, this.brain.drives.playfulness - 0.035);
+    this.brain.setAction(ACTIONS.PLAY, now, 3400);
+    this.nextDecisionAt = this.brain.actionUntil;
+    createHeart(mouseCenter, this.mouse.y - 6, "SQUEAK!", "reaction--common");
+  }
+
+  updateBubbles(dt, now) {
+    if (!this.bubbleMachine) return;
+    const machine = this.bubbleMachine;
+    if (this.drag?.kind !== "bubble-machine") {
+      const previousBottom = advanceBox(machine, dt, window.innerWidth);
+      if (machine.grounded) {
+        const support = this.world.get(machine.platformId);
+        if (!isBoxOnSurface(machine, support)) {
+          machine.grounded = false;
+          machine.platformId = null;
+        }
+      } else if (machine.vy >= 0) {
+        const landing = this.world.landingCandidate(
+          previousBottom,
+          machine.y + machine.height,
+          machine.x + 5,
+          machine.x + machine.width - 5,
+          5
+        );
+        if (landing) settleBox(machine, landing.top, landing.id);
+      }
+    }
+
+    if (machine.y > window.innerHeight + 40) {
+      const floor = this.world.get("floor");
+      machine.x = Math.min(window.innerWidth - machine.width - 12, Math.max(12, machine.x));
+      settleBox(machine, floor?.top ?? window.innerHeight - 38, "floor");
+    }
+
+    if (now >= this.nextBubbleAt) {
+      this.spawnBubble(machine.x + machine.width / 2, machine.y - 8, now);
+      this.nextBubbleAt = now + (habitat.classList.contains("performance-lite") ? 1250 : 880);
+    }
+
+    this.bubbles = this.bubbles.filter((bubble) => advanceBubble(bubble, dt, window.innerWidth, window.innerHeight, now));
+    const catCenterX = this.x + CAT_SIZE / 2;
+    const catCenterY = this.y + CAT_SIZE / 2;
+    const targetBubble = [...this.bubbles].sort((a, b) =>
+      Math.hypot(a.x - catCenterX, a.y - catCenterY) - Math.hypot(b.x - catCenterX, b.y - catCenterY)
+    )[0];
+    if (targetBubble) {
+      const surface = this.world.platformForTarget(targetBubble.x, targetBubble.y, 180);
+      this.toyTarget = { x: targetBubble.x, y: targetBubble.y, platformId: surface?.id || null, kind: "bubbles", bubble: targetBubble };
+    } else {
+      this.toyTarget = { x: machine.x + machine.width / 2, y: machine.y, platformId: machine.platformId, kind: "bubbles" };
+    }
+    this.renderBubbles();
+  }
+
+  spawnBubble(x, y, now = performance.now(), excite = false) {
+    if (this.toyType !== "bubbles" || !this.bubbleMachine) return;
+    if (this.bubbles.length >= bubbleElements.length) this.bubbles.shift();
+    this.bubbleSeed += 1;
+    this.bubbles.push(createBubble({ x, y, now, seed: this.bubbleSeed }));
+    this.nextBubbleAt = Math.max(this.nextBubbleAt, now + 260);
+    if (excite) {
+      this.brain.noticeToy(now);
+      this.brain.setAction(ACTIONS.PLAY, now, 3600);
+      this.beginAction(ACTIONS.PLAY, now);
+      this.nextDecisionAt = this.brain.actionUntil;
+    }
+  }
+
+  renderBubbles() {
+    if (!this.bubbleMachine) return;
+    const machineTransform = `translate3d(${this.bubbleMachine.x.toFixed(1)}px, ${this.bubbleMachine.y.toFixed(1)}px, 0)`;
+    if (machineTransform !== this.lastBubbleMachineTransform) {
+      bubbleMachineElement.style.transform = machineTransform;
+      this.lastBubbleMachineTransform = machineTransform;
+    }
+    bubbleMachineElement.classList.toggle("bubble-machine--held", this.drag?.kind === "bubble-machine");
+    bubbleMachineElement.dataset.platform = this.bubbleMachine.platformId || "airborne";
+    bubbleElements.forEach((element, index) => {
+      const bubble = this.bubbles[index];
+      element.classList.toggle("is-visible", Boolean(bubble));
+      if (!bubble) return;
+      element.style.width = `${bubble.radius * 2}px`;
+      element.style.height = `${bubble.radius * 2}px`;
+      element.style.transform = `translate3d(${(bubble.x - bubble.radius).toFixed(1)}px, ${(bubble.y - bubble.radius).toFixed(1)}px, 0)`;
+    });
+    bubbleToyElement.dataset.count = String(this.bubbles.length);
+    bubbleToyElement.dataset.pops = String(this.bubblePopCount);
+  }
+
+  popNearestBubble(now = performance.now()) {
+    if (!this.bubbles.length) return;
+    const pawX = this.x + CAT_SIZE * (this.facing > 0 ? 0.72 : 0.28);
+    const pawY = this.y + CAT_SIZE * 0.56;
+    let bestIndex = -1;
+    let bestDistance = Infinity;
+    this.bubbles.forEach((bubble, index) => {
+      const distance = Math.hypot(bubble.x - pawX, bubble.y - pawY);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    });
+    if (bestIndex < 0 || bestDistance > 56 + this.bubbles[bestIndex].radius) return;
+    const [bubble] = this.bubbles.splice(bestIndex, 1);
+    bubble.popped = true;
+    this.bubblePopCount += 1;
+    this.brain.drives.playfulness = Math.max(0, this.brain.drives.playfulness - 0.028);
+    this.brain.setAction(ACTIONS.PLAY, now, 3000);
+    this.nextDecisionAt = this.brain.actionUntil;
+    createHeart(bubble.x, bubble.y, "POP!", "reaction--rare");
+    this.renderBubbles();
+  }
+
+  updateTunnel(dt) {
+    if (!this.tunnel) return;
+    if (this.drag?.kind !== "tunnel") {
+      const previousBottom = advanceBox(this.tunnel, dt, window.innerWidth);
+      if (this.tunnel.grounded) {
+        const support = this.world.get(this.tunnel.platformId);
+        if (!isBoxOnSurface(this.tunnel, support)) {
+          this.tunnel.grounded = false;
+          this.tunnel.platformId = null;
+        }
+      } else if (this.tunnel.vy >= 0) {
+        const landing = this.world.landingCandidate(
+          previousBottom,
+          this.tunnel.y + this.tunnel.height,
+          this.tunnel.x + 7,
+          this.tunnel.x + this.tunnel.width - 7,
+          5
+        );
+        if (landing) settleBox(this.tunnel, landing.top, landing.id);
+      }
+    }
+    if (this.tunnel.y > window.innerHeight + 40) {
+      const floor = this.world.get("floor");
+      this.tunnel.x = Math.min(window.innerWidth - this.tunnel.width - 12, Math.max(12, this.tunnel.x));
+      settleBox(this.tunnel, floor?.top ?? window.innerHeight - 38, "floor");
+    }
+    this.toyTarget = {
+      x: this.tunnel.x + this.tunnel.width / 2,
+      y: this.tunnel.y + this.tunnel.height,
+      platformId: this.tunnel.platformId,
+      kind: "tunnel"
+    };
+    this.renderTunnel();
+  }
+
+  renderTunnel() {
+    if (!this.tunnel) return;
+    const transform = `translate3d(${this.tunnel.x.toFixed(1)}px, ${this.tunnel.y.toFixed(1)}px, 0)`;
+    if (transform !== this.lastTunnelTransform) {
+      tunnelToyElement.style.transform = transform;
+      this.lastTunnelTransform = transform;
+    }
+    tunnelToyElement.classList.toggle("tunnel-toy--held", this.drag?.kind === "tunnel");
+    tunnelToyElement.dataset.platform = this.tunnel.platformId || "airborne";
+    tunnelToyElement.dataset.uses = String(this.tunnelUses);
+  }
+
+  enterTunnel(now = performance.now()) {
+    if (!this.tunnel?.grounded || this.inTunnel || now < this.tunnelCooldownUntil) return;
+    const catCenter = this.x + CAT_SIZE / 2;
+    const tunnelCenter = this.tunnel.x + this.tunnel.width / 2;
+    this.inTunnelDirection = catCenter <= tunnelCenter ? 1 : -1;
+    this.inTunnel = true;
+    this.tunnelExitAt = now + 520;
+    this.vx = 0;
+    this.vy = 0;
+    this.grounded = true;
+    this.platformId = this.tunnel.platformId;
+    createHeart(catCenter, this.y + 8, "ZIP!", "reaction--epic");
+  }
+
+  exitTunnel(now = performance.now()) {
+    if (!this.tunnel) {
+      this.inTunnel = false;
+      return;
+    }
+    const platform = this.world.get(this.tunnel.platformId) || this.world.get("floor");
+    const exitX = this.inTunnelDirection > 0
+      ? this.tunnel.x + this.tunnel.width - 24
+      : this.tunnel.x - CAT_SIZE + 24;
+    this.x = Math.min(platform.right - CAT_SIZE, Math.max(platform.left, exitX));
+    this.y = platform.top - CAT_SIZE + CAT_FOOT_OFFSET;
+    this.facing = this.inTunnelDirection;
+    this.vx = this.facing * 188 * this.profile.movement.speed;
+    this.vy = -72 * this.profile.movement.jump;
+    this.grounded = false;
+    this.platformId = null;
+    this.departingPlatformId = null;
+    this.inTunnel = false;
+    this.tunnelUses += 1;
+    this.tunnelCooldownUntil = now + 1600;
+    this.brain.drives.playfulness = Math.max(0, this.brain.drives.playfulness - 0.04);
+    this.brain.setAction(ACTIONS.PLAY, now, 3000);
+    this.nextDecisionAt = this.brain.actionUntil;
+    createHeart(this.x + CAT_SIZE / 2, this.y + 8, "ZOOM!", "reaction--epic");
   }
 
   updateToy(dt, now) {
@@ -1284,6 +1608,7 @@ class LivingCat {
     if (!this.grounded) classes.push("cat--airborne");
     if (now < this.landingFlashUntil) classes.push("cat--land");
     if (this.inBox) classes.push("cat--in-box");
+    if (this.inTunnel) classes.push("cat--in-tunnel");
     if (ability === "tiny-scout") classes.push("cat--tiny-scout");
     if (ability === "mood-spectrum") classes.push("cat--mood-spectrum");
     if (ability === "mirror-clone") classes.push("cat--mirror-clone");
@@ -1341,7 +1666,7 @@ class LivingCat {
     if (catElement.dataset.y !== y) catElement.dataset.y = y;
     const activity = this.drag?.kind === "cat"
       ? "temporarily accepting relocation"
-      : ["toy", "box"].includes(this.drag?.kind)
+      : ["toy", "box", "mouse", "bubble-machine", "tunnel"].includes(this.drag?.kind)
         ? "watching where you put the toy"
         : actionCopy[this.brain.currentAction] || "thinking cat thoughts";
     const nextStatus = `${this.profile.name} · ${activity}`;
@@ -1354,12 +1679,19 @@ class LivingCat {
   startDrag(kind, event) {
     if (kind === "toy" && !this.toy) return false;
     if (kind === "box" && !this.box) return false;
+    if (kind === "mouse" && !this.mouse) return false;
+    if (kind === "bubble-machine" && !this.bubbleMachine) return false;
+    if (kind === "tunnel" && !this.tunnel) return false;
     const now = performance.now();
-    const origin = kind === "cat"
-      ? { x: this.x, y: this.y }
-      : kind === "box"
-        ? this.box
-        : this.toy;
+    const origin = {
+      cat: { x: this.x, y: this.y },
+      toy: this.toy,
+      box: this.box,
+      mouse: this.mouse,
+      "bubble-machine": this.bubbleMachine,
+      tunnel: this.tunnel
+    }[kind];
+    if (!origin) return false;
     const originX = origin.x;
     const originY = origin.y;
     this.drag = {
@@ -1391,13 +1723,23 @@ class LivingCat {
       this.toy.grounded = false;
       this.toy.platformId = null;
       this.renderToy();
-    } else {
+    } else if (kind === "box") {
       this.inBox = false;
       this.box.vx = 0;
       this.box.vy = 0;
       this.box.grounded = false;
       this.box.platformId = null;
       this.renderBox();
+    } else {
+      const prop = kind === "mouse" ? this.mouse : kind === "bubble-machine" ? this.bubbleMachine : this.tunnel;
+      if (kind === "tunnel") this.inTunnel = false;
+      prop.vx = 0;
+      prop.vy = 0;
+      prop.grounded = false;
+      prop.platformId = null;
+      if (kind === "mouse") this.renderMouse();
+      else if (kind === "bubble-machine") this.renderBubbles();
+      else this.renderTunnel();
     }
     return true;
   }
@@ -1432,6 +1774,14 @@ class LivingCat {
       this.toyTarget.y = this.box.y + this.box.height;
       this.toyTarget.platformId = null;
       this.renderBox();
+    } else if (["mouse", "bubble-machine", "tunnel"].includes(drag.kind)) {
+      const prop = drag.kind === "mouse" ? this.mouse : drag.kind === "bubble-machine" ? this.bubbleMachine : this.tunnel;
+      if (!prop) return false;
+      prop.x = Math.min(window.innerWidth - prop.width, Math.max(0, event.clientX - drag.offsetX));
+      prop.y = Math.min(window.innerHeight - prop.height, Math.max(0, event.clientY - drag.offsetY));
+      if (drag.kind === "mouse") this.renderMouse();
+      else if (drag.kind === "bubble-machine") this.renderBubbles();
+      else this.renderTunnel();
     }
     return true;
   }
@@ -1485,6 +1835,19 @@ class LivingCat {
       this.box.grounded = false;
       this.box.platformId = null;
       this.renderBox();
+    } else if (["mouse", "bubble-machine", "tunnel"].includes(drag.kind)) {
+      const prop = drag.kind === "mouse" ? this.mouse : drag.kind === "bubble-machine" ? this.bubbleMachine : this.tunnel;
+      if (!prop) return false;
+      prop.vx = Math.min(520, Math.max(-520, releaseVx));
+      prop.vy = Math.min(520, Math.max(-520, releaseVy));
+      prop.grounded = false;
+      prop.platformId = null;
+      if (drag.kind === "mouse") {
+        prop.direction = Math.sign(prop.vx) || prop.direction;
+        prop.dashUntil = now + 900;
+        this.renderMouse();
+      } else if (drag.kind === "bubble-machine") this.renderBubbles();
+      else this.renderTunnel();
     }
     return true;
   }
@@ -1601,19 +1964,48 @@ class LivingCat {
     toyButton.classList.toggle("is-active", Boolean(this.toyType));
   }
 
+  syncToyHint() {
+    const hints = {
+      ball: "Drag and toss · the cat will chase, bat, and redirect it",
+      laser: "Move anywhere · pause to stalk · sweep fast for a sprint",
+      box: "Drag onto any ledge · leave it nearby for hiding and sleep",
+      feather: "Move to tease · hold empty space to reel · release to cast",
+      mouse: "Drag or toss · it scurries, turns at edges, and escapes pounces",
+      bubbles: "Tap empty space for bubbles · drag the machine · help the cat pop them",
+      tunnel: "Drag onto a ledge · the cat dives in one end and rockets from the other"
+    };
+    toyHint.hidden = !this.toyType;
+    toyHint.textContent = hints[this.toyType] || "";
+  }
+
   putToyAway(now = performance.now()) {
     if (!this.toyType) return;
-    const toyName = this.toyType === "feather" ? "fishing rod" : this.toyType;
+    const toyName = {
+      feather: "fishing rod",
+      mouse: "wind-up mouse",
+      bubbles: "bubble machine",
+      tunnel: "play tunnel"
+    }[this.toyType] || this.toyType;
     this.toy = null;
     this.box = null;
     this.fishingRig = null;
+    this.mouse = null;
+    this.bubbleMachine = null;
+    this.bubbles = [];
+    this.bubblePopCount = 0;
+    this.tunnel = null;
+    this.tunnelUses = 0;
     this.toyType = null;
     this.toyTarget = null;
     this.inBox = false;
+    this.inTunnel = false;
     toyElement.classList.remove("is-visible", "toy--airborne", "toy--held");
     laserToyElement.hidden = true;
     boxToyElement.hidden = true;
     featherToyElement.hidden = true;
+    mouseToyElement.hidden = true;
+    bubbleToyElement.hidden = true;
+    tunnelToyElement.hidden = true;
     if (this.activeSpecial === "zero-gravity") {
       this.activeSpecial = "";
       this.abilityFlashUntil = now;
@@ -1627,6 +2019,7 @@ class LivingCat {
     }
     this.syncToyButtons();
     this.syncPutAwayButton();
+    this.syncToyHint();
     statusCopy.textContent = `${this.profile.name} watched the ${toyName} get put away`;
     this.lastStatusCopy = statusCopy.textContent;
   }
@@ -1640,18 +2033,32 @@ class LivingCat {
     this.toy = null;
     this.box = null;
     this.fishingRig = null;
+    this.mouse = null;
+    this.bubbleMachine = null;
+    this.bubbles = [];
+    this.bubblePopCount = 0;
+    this.tunnel = null;
+    this.tunnelUses = 0;
     this.toyType = type;
     this.toyTarget = null;
     this.inBox = false;
+    this.inTunnel = false;
     toyElement.classList.remove("is-visible");
     laserToyElement.hidden = true;
     boxToyElement.hidden = true;
     featherToyElement.hidden = true;
+    mouseToyElement.hidden = true;
+    bubbleToyElement.hidden = true;
+    tunnelToyElement.hidden = true;
 
     const now = performance.now();
     const floor = this.world.get("floor");
+    const controlsRect = document.querySelector(".controls").getBoundingClientRect();
+    const floorSpawnX = (width, preferredRatio = 0.62) => Math.max(
+      24,
+      Math.min(window.innerWidth * preferredRatio, controlsRect.left - width - 28, window.innerWidth - width - 24)
+    );
     if (type === "box") {
-      const controlsRect = document.querySelector(".controls").getBoundingClientRect();
       const preferredX = window.innerWidth * 0.62;
       const x = Math.max(28, Math.min(preferredX, controlsRect.left - 124, window.innerWidth - 120));
       const y = (floor?.top ?? window.innerHeight - 38) - 56;
@@ -1676,6 +2083,32 @@ class LivingCat {
       featherToyElement.hidden = false;
       this.toyTarget = { x: this.fishingRig.lureX, y: this.fishingRig.lureY, kind: "feather" };
       this.renderFishingRod();
+    } else if (type === "mouse") {
+      const x = floorSpawnX(42, 0.62);
+      const y = (floor?.top ?? window.innerHeight - 38) - 24;
+      this.mouse = createMouse({ x, y, platformId: "floor", now, direction: x < window.innerWidth / 2 ? 1 : -1 });
+      mouseToyElement.hidden = false;
+      this.toyTarget = { x: x + this.mouse.width / 2, y: y + this.mouse.height, platformId: "floor", kind: "mouse" };
+      this.renderMouse();
+    } else if (type === "bubbles") {
+      const x = floorSpawnX(58, 0.64);
+      const y = (floor?.top ?? window.innerHeight - 38) - 42;
+      this.bubbleMachine = createBox({ x, y, platformId: "floor" });
+      this.bubbleMachine.width = 58;
+      this.bubbleMachine.height = 42;
+      this.nextBubbleAt = now;
+      bubbleToyElement.hidden = false;
+      this.toyTarget = { x: x + 29, y, platformId: "floor", kind: "bubbles" };
+      this.updateBubbles(0, now);
+    } else if (type === "tunnel") {
+      const x = floorSpawnX(116, 0.58);
+      const y = (floor?.top ?? window.innerHeight - 38) - 48;
+      this.tunnel = createBox({ x, y, platformId: "floor" });
+      this.tunnel.width = 116;
+      this.tunnel.height = 48;
+      tunnelToyElement.hidden = false;
+      this.toyTarget = { x: x + 58, y: y + 48, platformId: "floor", kind: "tunnel" };
+      this.renderTunnel();
     }
 
     this.brain.noticeToy(now);
@@ -1684,7 +2117,13 @@ class LivingCat {
     this.nextDecisionAt = this.brain.actionUntil;
     this.syncToyButtons();
     this.syncPutAwayButton();
-    const toyName = type === "feather" ? "fishing rod" : type;
+    this.syncToyHint();
+    const toyName = {
+      feather: "fishing rod",
+      mouse: "wind-up mouse",
+      bubbles: "bubble machine",
+      tunnel: "play tunnel"
+    }[type] || type;
     statusCopy.textContent = `${this.profile.name} noticed the ${toyName}`;
     this.lastStatusCopy = statusCopy.textContent;
   }
@@ -1694,10 +2133,20 @@ class LivingCat {
     this.toyTarget = null;
     this.box = null;
     this.fishingRig = null;
+    this.mouse = null;
+    this.bubbleMachine = null;
+    this.bubbles = [];
+    this.bubblePopCount = 0;
+    this.tunnel = null;
+    this.tunnelUses = 0;
     this.inBox = false;
+    this.inTunnel = false;
     laserToyElement.hidden = true;
     boxToyElement.hidden = true;
     featherToyElement.hidden = true;
+    mouseToyElement.hidden = true;
+    bubbleToyElement.hidden = true;
+    tunnelToyElement.hidden = true;
     const current = this.world.get(this.platformId) || this.world.get("floor");
     const center = this.x + CAT_SIZE / 2;
     const reachable = this.world.reachableFrom(current, center, this.profile.movement.navigationJump).filter((platform) => platform.width > 100);
@@ -1733,6 +2182,7 @@ class LivingCat {
     toyElement.classList.add("is-visible");
     this.syncToyButtons();
     this.syncPutAwayButton();
+    this.syncToyHint();
     this.brain.noticeToy(now);
     this.brain.setAction(ACTIONS.PLAY, now, 5200);
     this.beginAction(ACTIONS.PLAY, now);
@@ -1808,7 +2258,7 @@ setupRoster();
 const world = new CatWorld(habitat);
 const cat = new LivingCat(world);
 const performanceGovernor = new PerformanceGovernor();
-habitat.dataset.features = "autonomy distinct-personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy drag-box fishing-rod inward-facing-rod cursor-toy-platform-targeting super-bounce low-latency-cursor-toys throw-ball toy-put-away expansion-roster super-roster iteration-four-roster special-abilities rhythm-burst time-bubble mirror-clone ground-pound zero-gravity sunbeam comfort-knead cursor-feint twin-tag-team royal-yowl prestidigitation speed-lap grapple-glide web-sling guardian-ward nine-lives navigator extra-toes immovable-loaf heat-seeker pointer-coalescing transform-only-motion performance-governor";
+habitat.dataset.features = "autonomy distinct-personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy drag-box fishing-rod reel-and-cast lure-strikes inward-facing-rod cursor-toy-platform-targeting wind-up-mouse mouse-pounce bubble-machine bubble-pop play-tunnel tunnel-zoom super-bounce low-latency-cursor-toys throw-ball toy-put-away expansion-roster super-roster iteration-four-roster special-abilities rhythm-burst time-bubble mirror-clone ground-pound zero-gravity sunbeam comfort-knead cursor-feint twin-tag-team royal-yowl prestidigitation speed-lap grapple-glide web-sling guardian-ward nine-lives navigator extra-toes immovable-loaf heat-seeker pointer-coalescing transform-only-motion performance-governor";
 habitat.dataset.performanceMode = performanceGovernor.mode;
 window.catStudio = { cat, world, profiles: CAT_PROFILES, performance: performanceGovernor, selectCat: (id) => cat.selectProfile(id) };
 let previousTime = performance.now();
@@ -1896,16 +2346,56 @@ boxToyElement.addEventListener("pointerdown", (event) => {
   }
 });
 
+mouseToyElement.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (cat.startDrag("mouse", event)) {
+    try { mouseToyElement.setPointerCapture?.(event.pointerId); } catch { /* Synthetic test events have no native capture target. */ }
+  }
+});
+
+bubbleMachineElement.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (cat.startDrag("bubble-machine", event)) {
+    try { bubbleMachineElement.setPointerCapture?.(event.pointerId); } catch { /* Synthetic test events have no native capture target. */ }
+  }
+});
+
+tunnelToyElement.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (cat.startDrag("tunnel", event)) {
+    try { tunnelToyElement.setPointerCapture?.(event.pointerId); } catch { /* Synthetic test events have no native capture target. */ }
+  }
+});
+
+window.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0 || cat.drag) return;
+  if (event.target.closest?.("button, #cat, .cat-roster, .toy-tray, .debug-panel")) return;
+  if (cat.toyType === "feather" && cat.fishingRig) {
+    setFishingReel(cat.fishingRig, true);
+    featherToyElement.dataset.reeling = "true";
+  } else if (cat.toyType === "bubbles" && cat.bubbleMachine) {
+    cat.spawnBubble(event.clientX, event.clientY, performance.now(), true);
+  }
+});
+
 window.addEventListener("pointerup", (event) => {
   if (pendingDrag?.pointerId === event.pointerId) {
     cat.moveDrag(pendingDrag);
     pendingDrag = null;
   }
   cat.endDrag(event);
+  if (cat.fishingRig?.reeling) setFishingReel(cat.fishingRig, false);
 });
 window.addEventListener("pointercancel", (event) => {
   pendingDrag = null;
   cat.endDrag(event);
+  if (cat.fishingRig?.reeling) setFishingReel(cat.fishingRig, false);
 });
 
 window.addEventListener("resize", () => {
@@ -1920,6 +2410,17 @@ window.addEventListener("resize", () => {
     if (cat.box.grounded && boxPlatform) cat.box.y = boxPlatform.top - cat.box.height;
     cat.renderBox();
   }
+  for (const [prop, render] of [
+    [cat.mouse, () => cat.renderMouse()],
+    [cat.bubbleMachine, () => cat.renderBubbles()],
+    [cat.tunnel, () => cat.renderTunnel()]
+  ]) {
+    if (!prop) continue;
+    prop.x = Math.min(window.innerWidth - prop.width, Math.max(0, prop.x));
+    const propPlatform = world.get(prop.platformId) || world.get("floor");
+    if (prop.grounded && propPlatform) prop.y = propPlatform.top - prop.height;
+    render();
+  }
 });
 
 document.addEventListener("visibilitychange", () => {
@@ -1927,6 +2428,7 @@ document.addEventListener("visibilitychange", () => {
   pointerSample.time = previousTime;
   pendingPointer = null;
   pendingDrag = null;
+  if (cat.fishingRig?.reeling) setFishingReel(cat.fishingRig, false);
 });
 
 toyButton.addEventListener("click", () => {

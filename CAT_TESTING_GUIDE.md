@@ -10,7 +10,7 @@ The guide describes the build represented by the `main` branch after the complet
 2. Reload the page before testing a new cat. This gives the cat a fresh brain and resets ability cooldowns.
 3. Select **Choose cat**, then select the cat you want to test.
 4. Select **Show brain**. Keep it open while testing.
-5. Use **Toys** to choose the red ball, laser, box, or fishing rod.
+5. Use **Toys** to choose the red ball, laser, box, fishing rod, wind-up mouse, bubbles, or play tunnel.
 6. Use **Put toy away** between tests so the old toy cannot affect the result.
 7. Give random abilities up to 15 seconds of valid play time. A random ability may not fire immediately even when all conditions are correct.
 
@@ -32,6 +32,13 @@ The brain panel shows the current action, energy, curiosity, affection, playfuln
 - **Laser and fishing rod:** move the target to the cat's surface to start a chase. Move it to the next tier to invite a jump.
 - **Page navigation:** every cat can climb the page one reachable tier at a time. Root is the only cat intended to skip a tier with a super-bounce.
 - **Performance Lite:** visual trails and effects may be simplified if the automatic performance guard activates. The underlying ability should still work.
+
+### Toy acceptance tests
+
+- **Fishing rod:** move the pointer across the center and confirm the rod always faces inward without flickering. Hold the pointer down on empty habitat space to reel the lure close; release to cast it. Whip the lure near the cat and confirm the cat bats it away with **SNAP!**. The handle should feel immediate while only the lure trails.
+- **Wind-up mouse:** deploy it and confirm it scurries without user input, reverses before running off a ledge, and makes **SQUEAK!** while escaping after a cat pounce. Drag and toss it to a different tier and confirm it lands and resumes running.
+- **Bubbles:** deploy the machine and tap empty habitat locations to blow extra bubbles. Confirm bubbles float upward, the cat jumps toward them, and nearby bubbles show **POP!**. No more than seven bubbles may exist at once. The machine itself must be draggable.
+- **Play tunnel:** deploy the tunnel on the cat's surface and confirm the cat disappears into one end, then launches from the other with **ZIP!** and **ZOOM!**. Drag the tunnel to another tier and confirm it lands flush before the cat uses it.
 
 ## 2. Complete roster at a glance
 
@@ -556,8 +563,9 @@ A roster build is ready to save when all of these are true:
 - [ ] Every cat can be picked up, moved, released, and land flush on a surface.
 - [ ] Every cat can reach the next webpage tier with a toy target.
 - [ ] Only Root skips a tier with a super-bounce.
-- [ ] Ball, laser, box, and fishing rod stay responsive without visible pointer lag.
+- [ ] Ball, laser, box, fishing rod, wind-up mouse, bubbles, and play tunnel stay responsive without visible pointer lag.
 - [ ] The box can be dragged and entered.
+- [ ] Fishing rod reel/cast, lure strikes, mouse pounces, bubble pops, and tunnel dives meet the toy acceptance tests above.
 - [ ] **Put toy away** removes the active toy.
 - [ ] Anger is visible in **Show brain** and hiss/claw reactions occur at the recorded thresholds.
 - [ ] Each active ability meets its cat-specific pass condition above.
@@ -573,4 +581,3 @@ A roster build is ready to save when all of these are true:
 - Passive abilities such as Byte's steadiness, Patches' sleep bias, Marmalade's speed, Sudo's jump, Ember's force, Oracle's calm, Root's range, and Dot's scale do not always display a special text burst.
 - Random abilities use chance plus cooldowns so the cats feel autonomous. A correct test may require waiting through more than one eligible moment.
 - The current demo stores one active cat state for the session; long-term friendship, food attraction, merging, visitors, residents, and persistent history are planned systems rather than part of this test guide.
-

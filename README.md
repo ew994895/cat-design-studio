@@ -40,7 +40,9 @@ After changing the source modules, regenerate the double-clickable build with `n
 - Cursor-stroking and Pet Cat controls with purring, hissing, claw swipes, and remembered pet count
 - Droppable physics toy with gravity, shelf and floor collisions, diminishing bounces, rolling friction, wall rebounds, and repeated paw strikes from the pursuing cat
 - Direct manipulation: pick up and relocate the cat, or drag and toss the ball with release velocity preserved
-- Four working toy interactions: red ball, low-latency cursor laser, draggable cardboard sleep box, and a responsive fishing rod that flips inward at screen center with a springy feather lure
+- Seven working toy interactions: red ball, low-latency cursor laser, draggable cardboard sleep box, reel-and-cast fishing rod, scurrying wind-up mouse, bubble machine, and a draggable play tunnel
+- The fishing rod now has a stable center-facing dead zone, hold-to-reel and release-to-cast control, a spring-whip lure, direct paw strikes, and lure-first platform targeting
+- New toy games are mechanically distinct: the mouse reverses at ledges and escapes pounces, bubbles stay capped and can be placed for aerial pops, and the tunnel launches the cat out the opposite side
 - A single Put toy away control removes whichever toy is active and returns the cat to autonomous behavior
 - Cursor toys are rendered once per animation frame, and unchanged cat/debug DOM is no longer rewritten continuously
 - Pointer and drag events are coalesced so input-heavy toys never run the full simulation more than once per display frame
