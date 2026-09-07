@@ -74,3 +74,57 @@ export function launchPoint(from, to) {
   const targetCenter = (to.left + to.right) / 2;
   return Math.min(from.right - inset, Math.max(from.left + inset, targetCenter));
 }
+
+function clampNavigation(value, minimum, maximum) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+export function chooseTetherAnchor(platforms, start, destination, viewportWidth) {
+  const midpointX = (start.x + destination.x) / 2;
+  const highestCatPoint = Math.min(start.y, destination.y);
+  const ceilingY = highestCatPoint - 54;
+  const candidates = platforms
+    .filter((platform) => platform.id !== "floor" && platform.top + 18 < ceilingY)
+    .map((platform) => {
+      const x = clampNavigation(midpointX, platform.left + 18, platform.right - 18);
+      const y = Math.min(platform.bottom - 12, platform.top + 18);
+      const horizontalDistance = Math.abs(x - midpointX);
+      const verticalDistance = Math.abs(y - (ceilingY - 82));
+      return { x, y, platformId: platform.id, score: horizontalDistance + verticalDistance * 0.28 };
+    })
+    .sort((a, b) => a.score - b.score);
+  if (candidates.length) {
+    const { x, y, platformId } = candidates[0];
+    return { x, y, platformId };
+  }
+  return {
+    x: clampNavigation(midpointX, 42, Math.max(42, viewportWidth - 42)),
+    y: 18,
+    platformId: "page-top"
+  };
+}
+
+export function sampleSwingArc(swing, now) {
+  const progress = clampNavigation((now - swing.startedAt) / swing.duration, 0, 1);
+  const eased = (1 - Math.cos(Math.PI * progress)) / 2;
+  const startDx = swing.startX - swing.anchorX;
+  const startDy = swing.startY - swing.anchorY;
+  const endDx = swing.endX - swing.anchorX;
+  const endDy = swing.endY - swing.anchorY;
+  const startAngle = Math.atan2(startDy, startDx);
+  const endAngle = Math.atan2(endDy, endDx);
+  let angleDelta = endAngle - startAngle;
+  while (angleDelta > Math.PI) angleDelta -= Math.PI * 2;
+  while (angleDelta < -Math.PI) angleDelta += Math.PI * 2;
+  const startRadius = Math.hypot(startDx, startDy);
+  const endRadius = Math.hypot(endDx, endDy);
+  const ropeStretch = Math.sin(Math.PI * progress) * Math.min(48, Math.abs(swing.endX - swing.startX) * 0.11);
+  const radius = startRadius + (endRadius - startRadius) * eased + ropeStretch;
+  const angle = startAngle + angleDelta * eased;
+  return {
+    x: swing.anchorX + Math.cos(angle) * radius,
+    y: swing.anchorY + Math.sin(angle) * radius,
+    progress,
+    complete: progress >= 1
+  };
+}

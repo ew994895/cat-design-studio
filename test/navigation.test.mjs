@@ -1,7 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { canTraverse, nextHopToward, platformForTarget, reachablePlatforms } from "../src/navigation.mjs";
+import {
+  canTraverse,
+  chooseTetherAnchor,
+  nextHopToward,
+  platformForTarget,
+  reachablePlatforms,
+  sampleSwingArc
+} from "../src/navigation.mjs";
 
 const platforms = [
   { id: "intro", left: 38, right: 398, top: 50, bottom: 336, width: 360 },
@@ -44,4 +51,38 @@ test("cursor toys map to the webpage surface they are hovering over", () => {
 test("ordinary cats climb one tier at a time while a super-bounce cat can skip a tier", () => {
   assert.equal(nextHopToward(platforms, byId("floor"), byId("intro"), 1).id, "shelf");
   assert.equal(nextHopToward(platforms, byId("floor"), byId("intro"), 1.8).id, "editor");
+});
+
+test("web swings anchor to a real webpage surface above both endpoints", () => {
+  const anchor = chooseTetherAnchor(
+    platforms,
+    { x: 620, y: 750 },
+    { x: 500, y: 480 },
+    760
+  );
+  assert.notEqual(anchor.platformId, "floor");
+  assert.ok(anchor.y < 426);
+  assert.ok(anchor.x >= byId(anchor.platformId).left);
+  assert.ok(anchor.x <= byId(anchor.platformId).right);
+});
+
+test("a web swing traces a pendulum arc and lands at its exact destination", () => {
+  const swing = {
+    anchorX: 380,
+    anchorY: 160,
+    startX: 650,
+    startY: 620,
+    endX: 230,
+    endY: 390,
+    startedAt: 100,
+    duration: 1000
+  };
+  assert.deepEqual(sampleSwingArc(swing, 100), { x: 650, y: 620, progress: 0, complete: false });
+  const middle = sampleSwingArc(swing, 600);
+  assert.ok(middle.x < 650 && middle.x > 230);
+  assert.ok(middle.y > swing.anchorY);
+  const landed = sampleSwingArc(swing, 1100);
+  assert.ok(Math.abs(landed.x - 230) < 0.000001);
+  assert.ok(Math.abs(landed.y - 390) < 0.000001);
+  assert.equal(landed.complete, true);
 });

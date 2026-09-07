@@ -1,6 +1,14 @@
 import { ACTIONS, CatBrain } from "./brain.mjs";
 import { CAT_PROFILES, DEFAULT_CAT_ID, getCatProfile } from "./cats.mjs";
-import { canTraverse, launchPoint, nextHopToward, platformForTarget, reachablePlatforms } from "./navigation.mjs";
+import {
+  canTraverse,
+  chooseTetherAnchor,
+  launchPoint,
+  nextHopToward,
+  platformForTarget,
+  reachablePlatforms,
+  sampleSwingArc
+} from "./navigation.mjs";
 import { PerformanceGovernor } from "./performance.mjs";
 import { advanceToy, bounceToy, createToy, isToyOnSurface, kickToy, TOY_RADIUS } from "./toy-physics.mjs";
 import {
@@ -42,6 +50,10 @@ const bubbleToyElement = document.querySelector("#bubble-toy");
 const bubbleMachineElement = document.querySelector("#bubble-machine");
 const bubbleElements = [...bubbleToyElement.querySelectorAll("[data-bubble-slot]")];
 const tunnelToyElement = document.querySelector("#tunnel-toy");
+const grappleLineElement = document.querySelector("#grapple-line");
+const grappleAnchorElement = document.querySelector("#grapple-anchor");
+const webLineElement = document.querySelector("#web-line");
+const webAnchorElement = document.querySelector("#web-anchor");
 const particleLayer = document.querySelector("#particles");
 const statusCopy = document.querySelector("#status-copy");
 const debugPanel = document.querySelector("#debug-panel");
@@ -205,6 +217,9 @@ class LivingCat {
     this.inTunnel = false;
     this.tunnelExitAt = 0;
     this.tunnelCooldownUntil = 0;
+    this.grapple = null;
+    this.webSwing = null;
+    this.webToyTether = null;
     this.inBox = false;
     this.specialCooldownUntil = 0;
     this.lastPetAt = 0;
@@ -247,6 +262,10 @@ class LivingCat {
     this.brain = new CatBrain({ profile: this.profile });
     this.vx = 0;
     this.target = null;
+    this.grapple = null;
+    this.webSwing = null;
+    this.webToyTether = null;
+    this.hideHeroTethers();
     this.lastFrame = -1;
     this.lastCatTransform = "";
     this.lastCatClassName = "";
@@ -352,6 +371,76 @@ class LivingCat {
     else if (this.toyType === "mouse") this.updateMouse(dt, now);
     else if (this.toyType === "bubbles") this.updateBubbles(dt, now);
     else if (this.toyType === "tunnel") this.updateTunnel(dt, now);
+    this.updateWebToyAbility(now);
+  }
+
+  webToyPoint(kind = this.webToyTether?.kind) {
+    if (kind === "ball" && this.toy) return { x: this.toy.x, y: this.toy.y };
+    if (kind === "box" && this.box) return { x: this.box.x + this.box.width / 2, y: this.box.y + this.box.height / 2 };
+    if (kind === "feather" && this.fishingRig) return { x: this.fishingRig.lureX, y: this.fishingRig.lureY };
+    if (kind === "mouse" && this.mouse) return { x: this.mouse.x + this.mouse.width / 2, y: this.mouse.y + this.mouse.height / 2 };
+    if (kind === "bubble" && this.toyTarget?.bubble) return { x: this.toyTarget.bubble.x, y: this.toyTarget.bubble.y };
+    if (kind === "bubbles" && this.bubbleMachine) return { x: this.bubbleMachine.x + this.bubbleMachine.width / 2, y: this.bubbleMachine.y + this.bubbleMachine.height / 2 };
+    if (kind === "tunnel" && this.tunnel) return { x: this.tunnel.x + this.tunnel.width / 2, y: this.tunnel.y + this.tunnel.height / 2 };
+    return null;
+  }
+
+  updateWebToyAbility(now) {
+    if (
+      this.profile.movement.ability !== "web-sling" ||
+      this.webSwing ||
+      this.grapple ||
+      this.drag ||
+      this.brain.currentAction !== ACTIONS.PLAY ||
+      now < this.specialCooldownUntil
+    ) return;
+
+    const kind = this.toyType === "bubbles" && this.toyTarget?.bubble ? "bubble" : this.toyType;
+    const point = this.webToyPoint(kind);
+    if (!point) return;
+    const pawX = this.x + CAT_SIZE * (this.facing > 0 ? 0.72 : 0.28);
+    const pawY = this.y + CAT_SIZE * 0.68;
+    const dx = pawX - point.x;
+    const dy = pawY - point.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance < 72 || distance > 520) return;
+    const nx = dx / distance;
+    const ny = dy / distance;
+
+    if (kind === "ball" && this.toy) {
+      this.toy.vx += nx * 410;
+      this.toy.vy += ny * 250 - 92;
+      this.toy.grounded = false;
+      this.toy.platformId = null;
+      this.toy.lastKickedAt = now;
+    } else if (kind === "feather" && this.fishingRig) {
+      this.fishingRig.lureVx += nx * 440;
+      this.fishingRig.lureVy += ny * 300 - 75;
+    } else if (kind === "bubble" && this.toyTarget?.bubble) {
+      this.toyTarget.bubble.vx += nx * 76;
+      this.toyTarget.bubble.vy += ny * 62;
+    } else {
+      const prop = kind === "box"
+        ? this.box
+        : kind === "mouse"
+          ? this.mouse
+          : kind === "bubbles"
+            ? this.bubbleMachine
+            : kind === "tunnel"
+              ? this.tunnel
+              : null;
+      if (!prop) return;
+      const force = kind === "tunnel" ? 190 : kind === "mouse" ? 390 : 255;
+      prop.vx += nx * force;
+      prop.vy += ny * force * 0.68 - 70;
+      prop.grounded = false;
+      prop.platformId = null;
+      if (kind === "mouse") prop.direction = Math.sign(prop.vx) || prop.direction;
+    }
+
+    this.webToyTether = { kind, endsAt: now + 920 };
+    this.specialCooldownUntil = now + 2700;
+    this.activateSpecial("web-toy", now, 920, "THWIP!", "reaction--epic");
   }
 
   beginAction(action, now) {
@@ -963,9 +1052,115 @@ class LivingCat {
     this.target = { x: targetX, y: target.top, platformId: target.id, kind: "platform" };
     this.nextJumpAt = now + 1350;
     if (this.profile.movement.ability === "grapple-glide" && now >= this.specialCooldownUntil) {
-      this.specialCooldownUntil = now + 1800;
-      this.activateSpecial("grapple-glide", now, 1100, "↗", "reaction--epic");
+      this.beginGrapple(target, targetX, now);
+    } else if (this.profile.movement.ability === "web-sling" && now >= this.specialCooldownUntil) {
+      this.beginWebSwing(target, targetX, now);
     }
+  }
+
+  beginGrapple(target, targetX, now = performance.now()) {
+    const destinationX = targetX - CAT_SIZE / 2;
+    const destinationY = target.top - CAT_SIZE + CAT_FOOT_OFFSET;
+    const distance = Math.hypot(destinationX - this.x, destinationY - this.y);
+    const duration = Math.min(1180, Math.max(720, 620 + distance * 0.72));
+    this.grapple = {
+      kind: "grapple",
+      anchorX: targetX,
+      anchorY: target.top,
+      startX: this.x,
+      startY: this.y,
+      endX: destinationX,
+      endY: destinationY,
+      platformId: target.id,
+      startedAt: now,
+      duration
+    };
+    this.webSwing = null;
+    this.webToyTether = null;
+    this.grounded = false;
+    this.platformId = null;
+    this.departingPlatformId = null;
+    this.vx = 0;
+    this.vy = 0;
+    this.specialCooldownUntil = now + duration + 620;
+    this.activateSpecial("grapple-glide", now, duration + 120, "HOOK!", "reaction--epic");
+  }
+
+  beginWebSwing(target, targetX, now = performance.now()) {
+    const start = { x: this.x + CAT_SIZE / 2, y: this.y + CAT_SIZE / 2 };
+    const destination = { x: targetX, y: target.top - CAT_SIZE / 2 + CAT_FOOT_OFFSET };
+    const anchor = chooseTetherAnchor(this.world.platforms, start, destination, window.innerWidth);
+    const distance = Math.hypot(destination.x - start.x, destination.y - start.y);
+    const duration = Math.min(1500, Math.max(920, 760 + distance * 1.25));
+    this.webSwing = {
+      kind: "web-swing",
+      anchorX: anchor.x,
+      anchorY: anchor.y,
+      anchorPlatformId: anchor.platformId,
+      startX: start.x,
+      startY: start.y,
+      endX: destination.x,
+      endY: destination.y,
+      platformId: target.id,
+      startedAt: now,
+      duration
+    };
+    this.grapple = null;
+    this.webToyTether = null;
+    this.grounded = false;
+    this.platformId = null;
+    this.departingPlatformId = null;
+    this.vx = 0;
+    this.vy = 0;
+    this.specialCooldownUntil = now + duration + 520;
+    this.activateSpecial("web-swing", now, duration + 120, "THWIP!", "reaction--epic");
+  }
+
+  finishHeroTraversal(motion, now, glyph) {
+    this.x = motion.kind === "web-swing" ? motion.endX - CAT_SIZE / 2 : motion.endX;
+    this.y = motion.kind === "web-swing" ? motion.endY - CAT_SIZE / 2 : motion.endY;
+    this.vx = 0;
+    this.vy = 0;
+    this.grounded = true;
+    this.platformId = motion.platformId;
+    this.departingPlatformId = null;
+    this.target = null;
+    this.doubleJumpUsed = false;
+    this.grapple = null;
+    this.webSwing = null;
+    this.brain.rememberLanding(motion.platformId);
+    this.landingFlashUntil = now + 320;
+    this.nextJumpAt = Math.max(this.nextJumpAt, now + 900);
+    createHeart(this.x + CAT_SIZE / 2, this.y + 8, glyph, "reaction--epic");
+  }
+
+  updateGrapple(dt, now) {
+    const motion = this.grapple;
+    if (!motion) return;
+    const progress = Math.min(1, Math.max(0, (now - motion.startedAt) / motion.duration));
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const nextX = motion.startX + (motion.endX - motion.startX) * eased;
+    const nextY = motion.startY + (motion.endY - motion.startY) * eased - Math.sin(Math.PI * progress) * 22;
+    this.vx = (nextX - this.x) / Math.max(dt, 1 / 240);
+    this.vy = (nextY - this.y) / Math.max(dt, 1 / 240);
+    this.facing = Math.sign(this.vx) || this.facing;
+    this.x = nextX;
+    this.y = nextY;
+    if (progress >= 1) this.finishHeroTraversal(motion, now, "GRAB!");
+  }
+
+  updateWebSwing(dt, now) {
+    const motion = this.webSwing;
+    if (!motion) return;
+    const previousX = this.x;
+    const previousY = this.y;
+    const point = sampleSwingArc(motion, now);
+    this.x = point.x - CAT_SIZE / 2;
+    this.y = point.y - CAT_SIZE / 2;
+    this.vx = (this.x - previousX) / Math.max(dt, 1 / 240);
+    this.vy = (this.y - previousY) / Math.max(dt, 1 / 240);
+    this.facing = Math.sign(this.vx) || this.facing;
+    if (point.complete) this.finishHeroTraversal(motion, now, "LAND!");
   }
 
   jumpForward(power = 0.55, now = performance.now()) {
@@ -981,6 +1176,14 @@ class LivingCat {
 
   updatePhysics(dt, now) {
     if (this.inTunnel) return;
+    if (this.grapple) {
+      this.updateGrapple(dt, now);
+      return;
+    }
+    if (this.webSwing) {
+      this.updateWebSwing(dt, now);
+      return;
+    }
     const previousBottom = this.y + CAT_SIZE - CAT_FOOT_OFFSET;
     const ability = this.profile.movement.ability;
     const zeroGravityActive =
@@ -1005,16 +1208,6 @@ class LivingCat {
       this.vy = -250 * this.profile.movement.jump;
       this.doubleJumpUsed = true;
       this.activateSpecial("double-jump", now, 430, "Ⅱ", "reaction--rare");
-    }
-    if (
-      !this.grounded &&
-      ability === "grapple-glide" &&
-      this.target?.kind === "platform" &&
-      Number.isFinite(this.target.x)
-    ) {
-      const horizontalError = this.target.x - (this.x + CAT_SIZE / 2);
-      this.vx += Math.max(-155, Math.min(155, horizontalError * 2.2)) * dt;
-      this.vx = Math.max(-430, Math.min(430, this.vx));
     }
     if (!this.grounded) {
       const gravityScale = ability === "feather-fall" && this.vy > 0
@@ -1509,26 +1702,6 @@ class LivingCat {
         }
       }
     }
-    if (
-      this.profile.movement.ability === "web-sling" &&
-      this.brain.currentAction === ACTIONS.PLAY &&
-      now >= this.specialCooldownUntil
-    ) {
-      const pawX = this.x + CAT_SIZE * (this.facing > 0 ? 0.72 : 0.28);
-      const pawY = this.y + CAT_SIZE * 0.7;
-      const dx = pawX - toy.x;
-      const dy = pawY - toy.y;
-      const distance = Math.hypot(dx, dy);
-      if (distance > 82 && distance < 390) {
-        toy.vx += dx / distance * 380;
-        toy.vy += dy / distance * 230 - 90;
-        toy.grounded = false;
-        toy.platformId = null;
-        toy.lastKickedAt = now;
-        this.specialCooldownUntil = now + 3400;
-        this.activateSpecial("web-sling", now, 980, "⌁", "reaction--epic");
-      }
-    }
     const previousBottom = advanceToy(toy, dt, window.innerWidth);
     const nextBottom = toy.y + toy.radius;
 
@@ -1649,6 +1822,85 @@ class LivingCat {
     }
   }
 
+  hideHeroTethers() {
+    grappleLineElement.hidden = true;
+    grappleAnchorElement.hidden = true;
+    webLineElement.hidden = true;
+    webAnchorElement.hidden = true;
+    catElement.dataset.traversal = "none";
+  }
+
+  renderTether(lineElement, anchorElement, fromX, fromY, toX, toY, showAnchor, kind) {
+    const geometry = segmentGeometry(fromX, fromY, toX, toY);
+    const lineTransform = `translate3d(${geometry.x.toFixed(1)}px, ${geometry.y.toFixed(1)}px, 0) rotate(${geometry.angle.toFixed(2)}deg) scaleX(${geometry.length.toFixed(1)})`;
+    const anchorTransform = `translate3d(${fromX.toFixed(1)}px, ${fromY.toFixed(1)}px, 0) translate(-50%, -50%)`;
+    lineElement.hidden = false;
+    anchorElement.hidden = !showAnchor;
+    if (lineElement.style.transform !== lineTransform) lineElement.style.transform = lineTransform;
+    if (showAnchor && anchorElement.style.transform !== anchorTransform) anchorElement.style.transform = anchorTransform;
+    lineElement.dataset.kind = kind;
+    lineElement.dataset.length = geometry.length.toFixed(1);
+  }
+
+  renderHeroTethers(now = performance.now()) {
+    if (this.grapple) {
+      const shoulderX = this.x + CAT_SIZE * (this.facing > 0 ? 0.66 : 0.34);
+      const shoulderY = this.y + CAT_SIZE * 0.38;
+      this.renderTether(
+        grappleLineElement,
+        grappleAnchorElement,
+        this.grapple.anchorX,
+        this.grapple.anchorY,
+        shoulderX,
+        shoulderY,
+        true,
+        "grapple"
+      );
+      webLineElement.hidden = true;
+      webAnchorElement.hidden = true;
+      catElement.dataset.traversal = "grapple";
+      grappleLineElement.dataset.platform = this.grapple.platformId;
+      return;
+    }
+
+    grappleLineElement.hidden = true;
+    grappleAnchorElement.hidden = true;
+    if (this.webSwing) {
+      const shoulderX = this.x + CAT_SIZE * (this.facing > 0 ? 0.66 : 0.34);
+      const shoulderY = this.y + CAT_SIZE * 0.32;
+      this.renderTether(
+        webLineElement,
+        webAnchorElement,
+        this.webSwing.anchorX,
+        this.webSwing.anchorY,
+        shoulderX,
+        shoulderY,
+        true,
+        "swing"
+      );
+      webLineElement.dataset.platform = this.webSwing.anchorPlatformId;
+      catElement.dataset.traversal = "web-swing";
+      return;
+    }
+
+    if (this.webToyTether && now < this.webToyTether.endsAt) {
+      const toyPoint = this.webToyPoint(this.webToyTether.kind);
+      if (toyPoint) {
+        const pawX = this.x + CAT_SIZE * (this.facing > 0 ? 0.72 : 0.28);
+        const pawY = this.y + CAT_SIZE * 0.68;
+        this.renderTether(webLineElement, webAnchorElement, pawX, pawY, toyPoint.x, toyPoint.y, false, "toy");
+        webLineElement.dataset.toy = this.webToyTether.kind;
+        catElement.dataset.traversal = "web-toy";
+        return;
+      }
+    }
+
+    this.webToyTether = null;
+    webLineElement.hidden = true;
+    webAnchorElement.hidden = true;
+    catElement.dataset.traversal = "none";
+  }
+
   render() {
     const transform = `translate3d(${this.x.toFixed(2)}px, ${this.y.toFixed(2)}px, 0) scale(${this.profile.visualScale})`;
     if (transform !== this.lastCatTransform) {
@@ -1656,6 +1908,8 @@ class LivingCat {
       this.lastCatTransform = transform;
     }
     catElement.style.setProperty("--facing", this.facing);
+    catElement.style.setProperty("--sprite-facing", String(this.facing * (this.profile.artDirection || 1)));
+    this.renderHeroTethers();
     const platform = this.platformId || "airborne";
     const grounded = String(this.grounded);
     const x = this.x.toFixed(1);
@@ -1710,6 +1964,10 @@ class LivingCat {
     };
 
     if (kind === "cat") {
+      this.grapple = null;
+      this.webSwing = null;
+      this.webToyTether = null;
+      this.hideHeroTethers();
       this.vx = 0;
       this.vy = 0;
       this.grounded = false;
@@ -1995,6 +2253,7 @@ class LivingCat {
     this.bubblePopCount = 0;
     this.tunnel = null;
     this.tunnelUses = 0;
+    this.webToyTether = null;
     this.toyType = null;
     this.toyTarget = null;
     this.inBox = false;
@@ -2039,6 +2298,7 @@ class LivingCat {
     this.bubblePopCount = 0;
     this.tunnel = null;
     this.tunnelUses = 0;
+    this.webToyTether = null;
     this.toyType = type;
     this.toyTarget = null;
     this.inBox = false;
@@ -2139,6 +2399,7 @@ class LivingCat {
     this.bubblePopCount = 0;
     this.tunnel = null;
     this.tunnelUses = 0;
+    this.webToyTether = null;
     this.inBox = false;
     this.inTunnel = false;
     laserToyElement.hidden = true;
@@ -2258,7 +2519,7 @@ setupRoster();
 const world = new CatWorld(habitat);
 const cat = new LivingCat(world);
 const performanceGovernor = new PerformanceGovernor();
-habitat.dataset.features = "autonomy distinct-personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy drag-box fishing-rod reel-and-cast lure-strikes inward-facing-rod cursor-toy-platform-targeting wind-up-mouse mouse-pounce bubble-machine bubble-pop play-tunnel tunnel-zoom super-bounce low-latency-cursor-toys throw-ball toy-put-away expansion-roster super-roster iteration-four-roster special-abilities rhythm-burst time-bubble mirror-clone ground-pound zero-gravity sunbeam comfort-knead cursor-feint twin-tag-team royal-yowl prestidigitation speed-lap grapple-glide web-sling guardian-ward nine-lives navigator extra-toes immovable-loaf heat-seeker pointer-coalescing transform-only-motion performance-governor";
+habitat.dataset.features = "autonomy distinct-personalities rarity-roster anger hiss claw platforms toy-physics drag-cat drag-toy drag-box fishing-rod reel-and-cast lure-strikes inward-facing-rod cursor-toy-platform-targeting wind-up-mouse mouse-pounce bubble-machine bubble-pop play-tunnel tunnel-zoom super-bounce low-latency-cursor-toys throw-ball toy-put-away expansion-roster super-roster iteration-four-roster special-abilities rhythm-burst time-bubble mirror-clone ground-pound zero-gravity sunbeam comfort-knead cursor-feint twin-tag-team royal-yowl prestidigitation speed-lap anchored-grapple-pull web-swing web-toy-tether guardian-ward nine-lives navigator extra-toes immovable-loaf heat-seeker pointer-coalescing transform-only-motion performance-governor";
 habitat.dataset.performanceMode = performanceGovernor.mode;
 window.catStudio = { cat, world, profiles: CAT_PROFILES, performance: performanceGovernor, selectCat: (id) => cat.selectProfile(id) };
 let previousTime = performance.now();

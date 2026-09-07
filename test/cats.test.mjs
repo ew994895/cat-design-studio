@@ -98,6 +98,11 @@ test("only the designated mega-jump cat gets super-bounce navigation", () => {
   assert.equal(superBounceCats[0].movement.ability, "mega-jump");
 });
 
+test("Quickpaw corrects the Flash artwork's native facing direction", () => {
+  assert.equal(getCatProfile("quickpaw").artDirection, -1);
+  assert.equal(CAT_PROFILES.filter((cat) => cat.artDirection === -1).length, 1);
+});
+
 test("unknown cats safely fall back to the default cat", () => {
   assert.equal(getCatProfile("not-a-cat").id, DEFAULT_CAT_ID);
 });

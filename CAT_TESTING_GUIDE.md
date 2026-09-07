@@ -73,8 +73,8 @@ The brain panel shows the current action, energy, curiosity, affection, playfuln
 | Sable | `sable` | Common | vocal · devoted · demanding | Fishing rod, box | Active/random | Royal yowl |
 | Mr. Mistoffelees | `mistoffelees` | Legendary | showy · secretive · precise | Ball, box | Active/random | Prestidigitation |
 | Quickpaw | `quickpaw` | Legendary | heroic · impatient · exuberant | Laser, ball | Active/random | Speed lap |
-| Nocturne | `nocturne` | Epic | watchful · protective · solitary | Fishing rod, laser | Active | Grapple glide |
-| Webpaw | `webpaw` | Epic | acrobatic · helpful · excitable | Ball, fishing rod | Active | Web sling |
+| Nocturne | `nocturne` | Epic | watchful · protective · solitary | Fishing rod, laser | Active | Anchored grapple pull |
+| Webpaw | `webpaw` | Epic | acrobatic · helpful · excitable | Ball, fishing rod | Active | Web swing + toy webbing |
 | Bastet | `bastet` | Legendary | regal · patient · protective | Box, fishing rod | Active | Guardian ward |
 | Unsinkable Sam | `unsinkable-sam` | Rare | unflappable · hardy · loyal | Box, ball | Active/recovery | Nine lives |
 | Trim | `trim` | Rare | adventurous · observant · steadfast | Laser, fishing rod | Active/profile | Navigator |
@@ -289,17 +289,20 @@ The brain panel shows the current action, energy, curiosity, affection, playfuln
 
 ### 30. Nocturne — grapple glide
 
-- **What makes Nocturne different:** ordinary tier jumps gain a visible grappling line and horizontal midair guidance.
-- **Trigger:** any targeted platform jump while ability cooldown is ready.
-- **Test:** place the laser or fishing lure on the next tier.
-- **Pass:** a line appears toward the landing area for about 1.1 seconds, and Nocturne glides horizontally toward the selected surface while airborne.
+- **What makes Nocturne different:** ordinary tier jumps become a direct grappling-hook traversal with a real fixed endpoint on the destination surface.
+- **Trigger:** any targeted platform jump while the ability cooldown is ready.
+- **Test:** place the laser or fishing lure on another reachable tier.
+- **Pass:** a gold hook attaches to the exact webpage landing point, the line stays connected while it shortens, and Nocturne is pulled smoothly onto that surface. The cat must finish grounded and flush on the hooked platform rather than drifting past it.
 
 ### 31. Webpaw — web sling
 
-- **What makes Webpaw different:** retrieves a rolling ball with a one-shot tether.
-- **Trigger:** ball is active, Webpaw is playing, and the ball is 82–390 px away while the ability is off cooldown.
-- **Test:** drag and release the ball so it rolls away 100–300 px from Webpaw.
-- **Pass:** a web line flashes, the airborne ball is pulled back toward Webpaw, and the effect lasts about 0.98 seconds. Cooldown is about 3.4 seconds.
+- **What makes Webpaw different:** uses anchored pendulum swings for page traversal and can web loose physical toys.
+- **Travel trigger:** any calculated platform-to-platform jump while the ability is off cooldown.
+- **Travel test:** place a cursor toy on another page tier or wait for Webpaw to choose an exploratory jump.
+- **Travel pass:** a white web visibly attaches to a point above the route, Webpaw follows a curved swing beneath it, changes facing with the arc, and lands exactly flush on the destination tier.
+- **Toy trigger:** while playing, place the ball, box, fishing lure, wind-up mouse, bubble or bubble machine, or play tunnel 72–520 px away while the ability is off cooldown.
+- **Toy test:** try the red ball first, then repeat with the draggable box and fishing lure.
+- **Toy pass:** the visible web runs from Webpaw's paw to the actual moving toy for about 0.92 seconds, and the object is tugged toward Webpaw. Heavy toys move less than the ball or mouse; the fishing lure bends toward the cat without breaking its rod line.
 
 ### 32. Bastet — guardian ward
 

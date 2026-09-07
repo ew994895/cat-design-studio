@@ -29,7 +29,7 @@ After changing the source modules, regenerate the double-clickable build with `n
 - Six super residents with entirely new play styles: rhythmic Tempo, time-bending Blink, imitative Mirror, heavyweight Atlas, free-floating Orbit, and restorative Halo
 - Super abilities are physical and visible: beat-timed sprinting, toy-slowing time bubbles, echo strikes, ball-launching ground pounds, zero-gravity toy orbiting, and an anger-calming sunbeam
 - A fourteen-cat fourth generation completes the current roster: personal mascots Melly and Witty; twin cats Pixel & Purl; vocal Siamese Sable; magical Mr. Mistoffelees; hero-inspired Quickpaw, Nocturne, and Webpaw; historic Bastet, Unsinkable Sam, Trim, and Snowball; plus Chonk and Sphinx
-- The fourth generation adds fourteen visible mechanics: comfort kneading, cursor feints, twin strikes, yowling, toy magic, speed laps, guided grapple jumps, web pulls, guardian wards, nine-life recovery, exploration memory, six-toed ball spin, immovable loafing, and heat-seeking rest
+- The fourth generation adds fourteen visible mechanics: comfort kneading, cursor feints, twin strikes, yowling, toy magic, speed laps, anchored grapple pulls, pendulum web swings with physical-toy webbing, guardian wards, nine-life recovery, exploration memory, six-toed ball spin, immovable loafing, and heat-seeking rest
 - All five roster atlases use isolated, centered 3×3 cells with safe transparent margins so ears, paws, tails, and effects cannot bleed into neighboring cats
 - Existing special behaviors including Marmalade's turbo sprint, Glitch's teleport, Root's mega jump, and Patches' deep sleep
 - Utility-based autonomous behavior selection rather than a scripted loop
